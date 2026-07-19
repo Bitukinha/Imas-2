@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listRegistrosDesde } from "@/server/registros";
 import { countImasAtivos } from "@/server/imas";
@@ -38,28 +38,15 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 
 type Periodo = "7d" | "30d" | "90d";
 
-const periodoLabel: Record<Periodo, string> = {
-  "7d": "ultimos-7-dias",
-  "30d": "ultimos-30-dias",
-  "90d": "ultimos-90-dias",
+const periodoInfo: Record<Periodo, { titulo: string; arquivo: string }> = {
+  "7d": { titulo: "Últimos 7 dias", arquivo: "ultimos-7-dias" },
+  "30d": { titulo: "Últimos 30 dias", arquivo: "ultimos-30-dias" },
+  "90d": { titulo: "Últimos 90 dias", arquivo: "ultimos-90-dias" },
 };
 
 function DashboardPage() {
   const [periodo, setPeriodo] = useState<Periodo>("30d");
   const [exportando, setExportando] = useState(false);
-  const pdfRef = useRef<HTMLDivElement>(null);
-
-  const handleExportPdf = async () => {
-    if (!pdfRef.current) return;
-    setExportando(true);
-    try {
-      await exportDashboardPdf(pdfRef.current, periodoLabel[periodo]);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha ao exportar PDF");
-    } finally {
-      setExportando(false);
-    }
-  };
 
   const desde = useMemo(() => {
     const dias = periodo === "7d" ? 7 : periodo === "30d" ? 30 : 90;
@@ -173,6 +160,43 @@ function DashboardPage() {
       .sort((a, b) => b.pctConforme - a.pctConforme);
   }, [stats]);
 
+  const handleExportPdf = async () => {
+    setExportando(true);
+    try {
+      await exportDashboardPdf({
+        periodoTitulo: periodoInfo[periodo].titulo,
+        periodoArquivo: periodoInfo[periodo].arquivo,
+        diasUteis: stats.diasUteis,
+        stats: {
+          total: stats.total,
+          conformes: stats.conformes,
+          naoConformes: stats.naoConformes,
+          acoes: stats.acoes,
+          pctConforme: stats.pctConforme,
+          aderencia: stats.aderencia,
+          esperados: stats.esperados,
+          porSetor: stats.porSetor,
+          topNaoConformes: stats.topNaoConformes,
+        },
+        rankingTurnos,
+        ultimasNaoConformidades: (registros ?? [])
+          .filter((r) => r.status === "nao_conforme")
+          .slice(0, 5)
+          .map((r) => ({
+            dataHora: r.dataHora,
+            turno: r.turno,
+            imaCodigo: r.imaCodigo,
+            setorNome: r.setorNome,
+            acaoTomada: r.acaoTomada,
+          })),
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao exportar PDF");
+    } finally {
+      setExportando(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -213,235 +237,228 @@ function DashboardPage() {
         </div>
       </div>
 
-      {/* CONTEÚDO EXPORTÁVEL EM PDF */}
-      <div ref={pdfRef} className="space-y-6">
-        {/* KPI CARDS */}
-        <div className="grid gap-4 md:grid-cols-4">
-          <KpiCard
-            title="Total de registros"
-            value={stats.total}
-            icon={<Activity className="h-4 w-4" />}
-            hint={`Esperado: ${stats.esperados}`}
-          />
-          <KpiCard
-            title="Conformidade"
-            value={`${stats.pctConforme}%`}
-            icon={<CheckCircle2 className="h-4 w-4 text-success" />}
-            hint={`${stats.conformes} conforme / ${stats.naoConformes} não conforme`}
-            accent="success"
-          />
-          <KpiCard
-            title="Não conformidades"
-            value={stats.naoConformes}
-            icon={<AlertTriangle className="h-4 w-4 text-destructive" />}
-            hint={`${stats.acoes} ações corretivas registradas`}
-            accent={stats.naoConformes > 0 ? "destructive" : undefined}
-          />
-          <KpiCard
-            title="Aderência 6x1"
-            value={`${stats.aderencia}%`}
-            icon={<TrendingUp className="h-4 w-4" />}
-            hint={`${stats.total} / ${stats.esperados} previstos`}
-            accent={
-              stats.aderencia >= 90 ? "success" : stats.aderencia >= 70 ? undefined : "destructive"
-            }
-          />
-        </div>
+      {/* KPI CARDS */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <KpiCard
+          title="Total de registros"
+          value={stats.total}
+          icon={<Activity className="h-4 w-4" />}
+          hint={`Esperado: ${stats.esperados}`}
+        />
+        <KpiCard
+          title="Conformidade"
+          value={`${stats.pctConforme}%`}
+          icon={<CheckCircle2 className="h-4 w-4 text-success" />}
+          hint={`${stats.conformes} conforme / ${stats.naoConformes} não conforme`}
+          accent="success"
+        />
+        <KpiCard
+          title="Não conformidades"
+          value={stats.naoConformes}
+          icon={<AlertTriangle className="h-4 w-4 text-destructive" />}
+          hint={`${stats.acoes} ações corretivas registradas`}
+          accent={stats.naoConformes > 0 ? "destructive" : undefined}
+        />
+        <KpiCard
+          title="Aderência 6x1"
+          value={`${stats.aderencia}%`}
+          icon={<TrendingUp className="h-4 w-4" />}
+          hint={`${stats.total} / ${stats.esperados} previstos`}
+          accent={
+            stats.aderencia >= 90 ? "success" : stats.aderencia >= 70 ? undefined : "destructive"
+          }
+        />
+      </div>
 
-        {/* CHARTS */}
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Conformidade por turno</CardTitle>
-              <CardDescription>Conforme vs. Não conforme em cada turno</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart
-                  data={(["A", "B", "C"] as Turno[]).map((t) => ({
-                    turno: `Turno ${t}`,
-                    Conforme: stats.turnos[t].conforme,
-                    "Não conforme": stats.turnos[t].nao_conforme,
-                  }))}
-                >
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="turno" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="Conforme" fill="var(--color-success)" radius={[4, 4, 0, 0]} />
-                  <Bar
-                    dataKey="Não conforme"
-                    fill="var(--color-destructive)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Aderência por turno</CardTitle>
-              <CardDescription>Registros realizados vs. esperados na escala 6x1</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart
-                  data={stats.aderenciaPorTurno.map((a) => ({
-                    turno: `Turno ${a.turno}`,
-                    Aderência: a.aderencia,
-                  }))}
-                >
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="turno" />
-                  <YAxis domain={[0, 100]} unit="%" />
-                  <Tooltip formatter={(v) => `${v}%`} />
-                  <Bar dataKey="Aderência" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Por setor</CardTitle>
-              <CardDescription>Conformidade agregada por setor</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={stats.porSetor} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis type="number" allowDecimals={false} />
-                  <YAxis type="category" dataKey="nome" width={100} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="conforme" stackId="a" name="Conforme" fill="var(--color-success)" />
-                  <Bar
-                    dataKey="nao_conforme"
-                    stackId="a"
-                    name="Não conforme"
-                    fill="var(--color-destructive)"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Top ímãs com não conformidade</CardTitle>
-              <CardDescription>Ímãs que mais tiveram ocorrências</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {stats.topNaoConformes.length === 0 ? (
-                <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
-                  Nenhuma não conformidade no período.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie
-                      data={stats.topNaoConformes}
-                      dataKey="nao_conforme"
-                      nameKey="codigo"
-                      outerRadius={100}
-                      label
-                    >
-                      {stats.topNaoConformes.map((_, i) => (
-                        <Cell key={i} fill={`var(--color-chart-${(i % 5) + 1})`} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* RANKING */}
+      {/* CHARTS */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Ranking de turnos</CardTitle>
-            <CardDescription>Melhor e pior turno por conformidade</CardDescription>
+            <CardTitle>Conformidade por turno</CardTitle>
+            <CardDescription>Conforme vs. Não conforme em cada turno</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {rankingTurnos.map((r, i) => (
-              <div
-                key={r.turno}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart
+                data={(["A", "B", "C"] as Turno[]).map((t) => ({
+                  turno: `Turno ${t}`,
+                  Conforme: stats.turnos[t].conforme,
+                  "Não conforme": stats.turnos[t].nao_conforme,
+                }))}
               >
-                <div className="flex items-center gap-3">
-                  <Badge
-                    variant={i === 0 ? "default" : i === 2 ? "destructive" : "secondary"}
-                    className="h-8 w-8 justify-center rounded-full p-0"
-                  >
-                    {i + 1}
-                  </Badge>
-                  <div>
-                    <div className="font-medium">{turnoLabel(r.turno)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {r.total} registros — {r.conforme} conforme, {r.nao_conforme} não conforme
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-4 text-right">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Conformidade</div>
-                    <div className="text-lg font-semibold">{r.pctConforme}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Aderência</div>
-                    <div className="text-lg font-semibold">{r.aderencia}%</div>
-                  </div>
-                </div>
-              </div>
-            ))}
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="turno" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="Conforme" fill="var(--color-success)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Não conforme" fill="var(--color-destructive)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        {/* Últimas não conformidades */}
         <Card>
           <CardHeader>
-            <CardTitle>Últimas não conformidades</CardTitle>
-            <CardDescription>Ocorrências recentes com ação corretiva</CardDescription>
+            <CardTitle>Aderência por turno</CardTitle>
+            <CardDescription>Registros realizados vs. esperados na escala 6x1</CardDescription>
           </CardHeader>
           <CardContent>
-            {registros?.filter((r) => r.status === "nao_conforme").slice(0, 5).length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sem registros de não conformidade.</p>
-            ) : (
-              <div className="space-y-2">
-                {registros
-                  ?.filter((r) => r.status === "nao_conforme")
-                  .slice(0, 5)
-                  .map((r) => (
-                    <div
-                      key={r.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded border p-3 text-sm"
-                    >
-                      <div>
-                        <div className="font-medium">
-                          {r.imaCodigo} — {r.setorNome}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {new Date(r.dataHora).toLocaleString("pt-BR")} · Turno {r.turno}
-                        </div>
-                        {r.acaoTomada && (
-                          <div className="mt-1 text-xs">
-                            <span className="font-medium">Ação:</span> {r.acaoTomada}
-                          </div>
-                        )}
-                      </div>
-                      <Badge variant="destructive">Não conforme</Badge>
-                    </div>
-                  ))}
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart
+                data={stats.aderenciaPorTurno.map((a) => ({
+                  turno: `Turno ${a.turno}`,
+                  Aderência: a.aderencia,
+                }))}
+              >
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="turno" />
+                <YAxis domain={[0, 100]} unit="%" />
+                <Tooltip formatter={(v) => `${v}%`} />
+                <Bar dataKey="Aderência" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Por setor</CardTitle>
+            <CardDescription>Conformidade agregada por setor</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={stats.porSetor} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis type="category" dataKey="nome" width={100} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="conforme" stackId="a" name="Conforme" fill="var(--color-success)" />
+                <Bar
+                  dataKey="nao_conforme"
+                  stackId="a"
+                  name="Não conforme"
+                  fill="var(--color-destructive)"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top ímãs com não conformidade</CardTitle>
+            <CardDescription>Ímãs que mais tiveram ocorrências</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {stats.topNaoConformes.length === 0 ? (
+              <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+                Nenhuma não conformidade no período.
               </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={stats.topNaoConformes}
+                    dataKey="nao_conforme"
+                    nameKey="codigo"
+                    outerRadius={100}
+                    label
+                  >
+                    {stats.topNaoConformes.map((_, i) => (
+                      <Cell key={i} fill={`var(--color-chart-${(i % 5) + 1})`} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* RANKING */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Ranking de turnos</CardTitle>
+          <CardDescription>Melhor e pior turno por conformidade</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {rankingTurnos.map((r, i) => (
+            <div
+              key={r.turno}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+            >
+              <div className="flex items-center gap-3">
+                <Badge
+                  variant={i === 0 ? "default" : i === 2 ? "destructive" : "secondary"}
+                  className="h-8 w-8 justify-center rounded-full p-0"
+                >
+                  {i + 1}
+                </Badge>
+                <div>
+                  <div className="font-medium">{turnoLabel(r.turno)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {r.total} registros — {r.conforme} conforme, {r.nao_conforme} não conforme
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-4 text-right">
+                <div>
+                  <div className="text-xs text-muted-foreground">Conformidade</div>
+                  <div className="text-lg font-semibold">{r.pctConforme}%</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Aderência</div>
+                  <div className="text-lg font-semibold">{r.aderencia}%</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Últimas não conformidades */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Últimas não conformidades</CardTitle>
+          <CardDescription>Ocorrências recentes com ação corretiva</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {registros?.filter((r) => r.status === "nao_conforme").slice(0, 5).length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sem registros de não conformidade.</p>
+          ) : (
+            <div className="space-y-2">
+              {registros
+                ?.filter((r) => r.status === "nao_conforme")
+                .slice(0, 5)
+                .map((r) => (
+                  <div
+                    key={r.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border p-3 text-sm"
+                  >
+                    <div>
+                      <div className="font-medium">
+                        {r.imaCodigo} — {r.setorNome}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(r.dataHora).toLocaleString("pt-BR")} · Turno {r.turno}
+                      </div>
+                      {r.acaoTomada && (
+                        <div className="mt-1 text-xs">
+                          <span className="font-medium">Ação:</span> {r.acaoTomada}
+                        </div>
+                      )}
+                    </div>
+                    <Badge variant="destructive">Não conforme</Badge>
+                  </div>
+                ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

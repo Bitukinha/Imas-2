@@ -153,24 +153,162 @@ export async function exportRegistroDetalhePdf(detalhe: RegistroDetalhe) {
   doc.save(`registro-${new Date(detalhe.dataHora).toISOString().slice(0, 10)}.pdf`);
 }
 
-export async function exportDashboardPdf(container: HTMLElement, periodoLabel: string) {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+type Turno = "A" | "B" | "C";
 
-  await new Promise<void>((resolve, reject) => {
-    doc
-      .html(container, {
-        x: 20,
-        y: 20,
-        width: 555,
-        windowWidth: container.scrollWidth,
-        callback: (finishedDoc) => {
-          finishedDoc.save(
-            `dashboard-${periodoLabel}-${new Date().toISOString().slice(0, 10)}.pdf`,
-          );
-          resolve();
-        },
-      })
-      .catch(reject);
+type DashboardExportData = {
+  periodoTitulo: string;
+  periodoArquivo: string;
+  diasUteis: number;
+  stats: {
+    total: number;
+    conformes: number;
+    naoConformes: number;
+    acoes: number;
+    pctConforme: number;
+    aderencia: number;
+    esperados: number;
+    porSetor: { nome: string; conforme: number; nao_conforme: number }[];
+    topNaoConformes: { codigo: string; nao_conforme: number }[];
+  };
+  rankingTurnos: {
+    turno: Turno;
+    total: number;
+    conforme: number;
+    nao_conforme: number;
+    pctConforme: number;
+    aderencia: number;
+  }[];
+  ultimasNaoConformidades: {
+    dataHora: string | Date;
+    turno: string;
+    imaCodigo: string | null;
+    setorNome: string | null;
+    acaoTomada: string | null;
+  }[];
+};
+
+function tableFinalY(doc: import("jspdf").jsPDF, fallback: number): number {
+  return (
+    (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? fallback
+  );
+}
+
+function ensureSpace(doc: import("jspdf").jsPDF, y: number, needed = 60): number {
+  if (y + needed <= 780) return y;
+  doc.addPage();
+  return 50;
+}
+
+export async function exportDashboardPdf(data: DashboardExportData) {
+  const [{ jsPDF }, { autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const marginX = 40;
+
+  doc.setFontSize(16);
+  doc.text("Dashboard de limpeza de ímãs — Nutrimilho", marginX, 40);
+  doc.setFontSize(10);
+  doc.text(
+    `${data.periodoTitulo} · ${data.diasUteis} dias úteis · Gerado em ${new Date().toLocaleString("pt-BR")}`,
+    marginX,
+    56,
+  );
+
+  const tableMargin = { left: marginX, right: marginX };
+  const headStyles = { fillColor: [46, 125, 70] as [number, number, number] };
+
+  autoTable(doc, {
+    startY: 70,
+    head: [["Total de registros", "Conformidade", "Não conformidades", "Aderência 6x1"]],
+    body: [
+      [
+        `${data.stats.total} (esperado ${data.stats.esperados})`,
+        `${data.stats.pctConforme}% (${data.stats.conformes} conforme / ${data.stats.naoConformes} não conforme)`,
+        `${data.stats.naoConformes} (${data.stats.acoes} ações corretivas)`,
+        `${data.stats.aderencia}%`,
+      ],
+    ],
+    styles: { fontSize: 9 },
+    headStyles,
+    margin: tableMargin,
   });
+  let y = tableFinalY(doc, 90) + 24;
+
+  y = ensureSpace(doc, y, 120);
+  doc.setFontSize(11);
+  doc.text("Conformidade e aderência por turno", marginX, y);
+  y += 8;
+  autoTable(doc, {
+    startY: y,
+    head: [["Turno", "Conforme", "Não conforme", "% Conformidade", "% Aderência"]],
+    body: data.rankingTurnos.map((r) => [
+      `Turno ${r.turno}`,
+      String(r.conforme),
+      String(r.nao_conforme),
+      `${r.pctConforme}%`,
+      `${r.aderencia}%`,
+    ]),
+    styles: { fontSize: 9 },
+    headStyles,
+    margin: tableMargin,
+  });
+  y = tableFinalY(doc, y) + 24;
+
+  if (data.stats.porSetor.length > 0) {
+    y = ensureSpace(doc, y, 120);
+    doc.setFontSize(11);
+    doc.text("Conformidade por setor", marginX, y);
+    y += 8;
+    autoTable(doc, {
+      startY: y,
+      head: [["Setor", "Conforme", "Não conforme"]],
+      body: data.stats.porSetor.map((s) => [s.nome, String(s.conforme), String(s.nao_conforme)]),
+      styles: { fontSize: 9 },
+      headStyles,
+      margin: tableMargin,
+    });
+    y = tableFinalY(doc, y) + 24;
+  }
+
+  if (data.stats.topNaoConformes.length > 0) {
+    y = ensureSpace(doc, y, 120);
+    doc.setFontSize(11);
+    doc.text("Top ímãs com não conformidade", marginX, y);
+    y += 8;
+    autoTable(doc, {
+      startY: y,
+      head: [["Ímã", "Ocorrências de não conformidade"]],
+      body: data.stats.topNaoConformes.map((i) => [i.codigo, String(i.nao_conforme)]),
+      styles: { fontSize: 9 },
+      headStyles,
+      margin: tableMargin,
+    });
+    y = tableFinalY(doc, y) + 24;
+  }
+
+  if (data.ultimasNaoConformidades.length > 0) {
+    y = ensureSpace(doc, y, 120);
+    doc.setFontSize(11);
+    doc.text("Últimas não conformidades", marginX, y);
+    y += 8;
+    autoTable(doc, {
+      startY: y,
+      head: [["Data/Hora", "Turno", "Ímã", "Setor", "Ação tomada"]],
+      body: data.ultimasNaoConformidades.map((r) => [
+        new Date(r.dataHora).toLocaleString("pt-BR"),
+        `Turno ${r.turno}`,
+        r.imaCodigo ?? "—",
+        r.setorNome ?? "—",
+        r.acaoTomada ?? "—",
+      ]),
+      styles: { fontSize: 9 },
+      headStyles,
+      margin: tableMargin,
+    });
+  }
+
+  doc.save(`dashboard-${data.periodoArquivo}-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
