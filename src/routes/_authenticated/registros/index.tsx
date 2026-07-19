@@ -19,10 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, ImageIcon } from "lucide-react";
+import { Plus, ImageIcon, FileDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignedImage } from "@/components/SignedImage";
 import { listRegistros } from "@/server/registros";
+import { exportRegistrosPdf } from "@/lib/export-pdf";
 
 export const Route = createFileRoute("/_authenticated/registros/")({
   component: RegistrosPage,
@@ -58,11 +59,20 @@ function RegistrosPage() {
             Histórico de verificações realizadas nos turnos
           </p>
         </div>
-        <Button asChild>
-          <Link to="/registros/novo">
-            <Plus className="mr-2 h-4 w-4" /> Novo registro
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            disabled={!registros || registros.length === 0}
+            onClick={() => registros && exportRegistrosPdf(registros)}
+          >
+            <FileDown className="mr-2 h-4 w-4" /> Exportar PDF
+          </Button>
+          <Button asChild>
+            <Link to="/registros/novo">
+              <Plus className="mr-2 h-4 w-4" /> Novo registro
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
