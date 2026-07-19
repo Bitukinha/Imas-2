@@ -23,7 +23,7 @@ import { Plus, ImageIcon, FileDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignedImage } from "@/components/SignedImage";
 import { listRegistros } from "@/server/registros";
-import { exportRegistrosPdf } from "@/lib/export-pdf";
+import { exportRegistrosPdf, exportRegistroDetalhePdf } from "@/lib/export-pdf";
 
 export const Route = createFileRoute("/_authenticated/registros/")({
   component: RegistrosPage,
@@ -157,7 +157,18 @@ function RegistrosPage() {
       <Dialog open={!!openId} onOpenChange={(o) => !o && setOpenId(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Detalhes do registro</DialogTitle>
+            <div className="flex items-center justify-between gap-3 pr-6">
+              <DialogTitle>Detalhes do registro</DialogTitle>
+              {detalhe && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => exportRegistroDetalhePdf(detalhe)}
+                >
+                  <FileDown className="mr-2 h-4 w-4" /> Exportar PDF
+                </Button>
+              )}
+            </div>
           </DialogHeader>
           {detalhe && (
             <div className="space-y-4">
