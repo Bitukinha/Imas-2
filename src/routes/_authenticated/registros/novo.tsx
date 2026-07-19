@@ -259,11 +259,19 @@ function NovoRegistroPage() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={() => navigate({ to: "/registros" })}>
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <Button
+          variant="outline"
+          className="w-full sm:w-auto"
+          onClick={() => navigate({ to: "/registros" })}
+        >
           Cancelar
         </Button>
-        <Button onClick={() => submit.mutate()} disabled={submit.isPending}>
+        <Button
+          className="w-full sm:w-auto"
+          onClick={() => submit.mutate()}
+          disabled={submit.isPending}
+        >
           {submit.isPending ? "Salvando..." : "Salvar registro"}
         </Button>
       </div>

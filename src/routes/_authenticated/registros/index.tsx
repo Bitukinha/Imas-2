@@ -52,14 +52,14 @@ function RegistrosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Registros de limpeza</h1>
           <p className="text-sm text-muted-foreground">
             Histórico de verificações realizadas nos turnos
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Button
             variant="outline"
             disabled={!registros || registros.length === 0}
@@ -75,9 +75,9 @@ function RegistrosPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <Select value={filtroTurno} onValueChange={(v) => setFiltroTurno(v as TurnoFiltro)}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="Turno" />
           </SelectTrigger>
           <SelectContent>
@@ -88,7 +88,7 @@ function RegistrosPage() {
           </SelectContent>
         </Select>
         <Select value={filtroStatus} onValueChange={(v) => setFiltroStatus(v as StatusFiltro)}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-full sm:w-48">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -108,44 +108,75 @@ function RegistrosPage() {
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Carregando...</p>
           ) : registros && registros.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Data/Hora</TableHead>
-                  <TableHead>Turno</TableHead>
-                  <TableHead>Ímã</TableHead>
-                  <TableHead>Setor</TableHead>
-                  <TableHead>Responsável</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-16" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              {/* Lista em cartões — telas pequenas */}
+              <div className="space-y-3 md:hidden">
                 {registros.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>{new Date(r.dataHora).toLocaleString("pt-BR")}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">Turno {r.turno}</Badge>
-                    </TableCell>
-                    <TableCell className="font-medium">{r.imaCodigo}</TableCell>
-                    <TableCell>{r.setorNome}</TableCell>
-                    <TableCell className="text-sm">{r.responsavelNome ?? "—"}</TableCell>
-                    <TableCell>
+                  <button
+                    key={r.id}
+                    onClick={() => setOpenId(r.id)}
+                    className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-medium">{r.imaCodigo}</div>
                       {r.status === "conforme" ? (
                         <Badge className="bg-success text-success-foreground">Conforme</Badge>
                       ) : (
                         <Badge variant="destructive">Não conforme</Badge>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <Button size="icon" variant="ghost" onClick={() => setOpenId(r.id)}>
-                        <ImageIcon className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">{r.setorNome}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline">Turno {r.turno}</Badge>
+                      <span>{new Date(r.dataHora).toLocaleString("pt-BR")}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Responsável: {r.responsavelNome ?? "—"}
+                    </div>
+                  </button>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+
+              {/* Tabela — telas médias e maiores */}
+              <Table className="hidden md:table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data/Hora</TableHead>
+                    <TableHead>Turno</TableHead>
+                    <TableHead>Ímã</TableHead>
+                    <TableHead>Setor</TableHead>
+                    <TableHead>Responsável</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-16" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {registros.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell>{new Date(r.dataHora).toLocaleString("pt-BR")}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">Turno {r.turno}</Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">{r.imaCodigo}</TableCell>
+                      <TableCell>{r.setorNome}</TableCell>
+                      <TableCell className="text-sm">{r.responsavelNome ?? "—"}</TableCell>
+                      <TableCell>
+                        {r.status === "conforme" ? (
+                          <Badge className="bg-success text-success-foreground">Conforme</Badge>
+                        ) : (
+                          <Badge variant="destructive">Não conforme</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button size="icon" variant="ghost" onClick={() => setOpenId(r.id)}>
+                          <ImageIcon className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </>
           ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
               Nenhum registro encontrado.
@@ -157,7 +188,7 @@ function RegistrosPage() {
       <Dialog open={!!openId} onOpenChange={(o) => !o && setOpenId(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <div className="flex items-center justify-between gap-3 pr-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 pr-6">
               <DialogTitle>Detalhes do registro</DialogTitle>
               {detalhe && (
                 <Button
