@@ -21,21 +21,13 @@ import { listImasAtivos } from "@/server/imas";
 import { listUsuariosPorPapel } from "@/server/usuarios";
 import { uploadArquivo } from "@/server/arquivos";
 import { createRegistro } from "@/server/registros";
+import { compressImageToBase64 } from "@/lib/image";
 
 export const Route = createFileRoute("/_authenticated/registros/novo")({
   component: NovoRegistroPage,
 });
 
 type StatusOpt = "conforme" | "nao_conforme";
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 function NovoRegistroPage() {
   const navigate = useNavigate();
@@ -72,8 +64,8 @@ function NovoRegistroPage() {
   });
 
   const uploadFoto = async (file: File) => {
-    const dataBase64 = await fileToBase64(file);
-    return uploadArquivo({ data: { contentType: file.type, dataBase64 } });
+    const { base64, contentType } = await compressImageToBase64(file);
+    return uploadArquivo({ data: { contentType, dataBase64: base64 } });
   };
 
   const submit = useMutation({
