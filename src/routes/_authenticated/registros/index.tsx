@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -19,10 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, ImageIcon, FileDown } from "lucide-react";
+import { Plus, ImageIcon, FileDown, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignedImage } from "@/components/SignedImage";
-import { listRegistros } from "@/server/registros";
+import { deleteRegistro, listRegistros } from "@/server/registros";
 import { exportRegistrosPdf, exportRegistroDetalhePdf } from "@/lib/export-pdf";
 
 export const Route = createFileRoute("/_authenticated/registros/")({
@@ -33,6 +34,7 @@ type TurnoFiltro = "all" | "A" | "B" | "C";
 type StatusFiltro = "all" | "conforme" | "nao_conforme";
 
 function RegistrosPage() {
+  const qc = useQueryClient();
   const [filtroTurno, setFiltroTurno] = useState<TurnoFiltro>("all");
   const [filtroStatus, setFiltroStatus] = useState<StatusFiltro>("all");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -46,6 +48,16 @@ function RegistrosPage() {
           status: filtroStatus === "all" ? undefined : filtroStatus,
         },
       }),
+  });
+
+  const excluir = useMutation({
+    mutationFn: (id: string) => deleteRegistro({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Registro removido");
+      qc.invalidateQueries({ queryKey: ["registros"] });
+      setOpenId(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const detalhe = registros?.find((r) => r.id === openId) ?? null;
@@ -112,28 +124,41 @@ function RegistrosPage() {
               {/* Lista em cartões — telas pequenas */}
               <div className="space-y-3 md:hidden">
                 {registros.map((r) => (
-                  <button
-                    key={r.id}
-                    onClick={() => setOpenId(r.id)}
-                    className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="font-medium">{r.imaCodigo}</div>
-                      {r.status === "conforme" ? (
-                        <Badge className="bg-success text-success-foreground">Conforme</Badge>
-                      ) : (
-                        <Badge variant="destructive">Não conforme</Badge>
-                      )}
+                  <div key={r.id} className="w-full rounded-lg border p-3">
+                    <button
+                      onClick={() => setOpenId(r.id)}
+                      className="w-full text-left"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-medium">{r.imaCodigo}</div>
+                        {r.status === "conforme" ? (
+                          <Badge className="bg-success text-success-foreground">Conforme</Badge>
+                        ) : (
+                          <Badge variant="destructive">Não conforme</Badge>
+                        )}
+                      </div>
+                      <div className="mt-1 text-sm text-muted-foreground">{r.setorNome}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline">Turno {r.turno}</Badge>
+                        <span>{new Date(r.dataHora).toLocaleString("pt-BR")}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Responsável: {r.responsavelNome ?? "—"}
+                      </div>
+                    </button>
+                    <div className="mt-2 flex justify-end border-t pt-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => {
+                          if (confirm("Excluir este registro?")) excluir.mutate(r.id);
+                        }}
+                      >
+                        <Trash2 className="mr-1 h-4 w-4" /> Excluir
+                      </Button>
                     </div>
-                    <div className="mt-1 text-sm text-muted-foreground">{r.setorNome}</div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline">Turno {r.turno}</Badge>
-                      <span>{new Date(r.dataHora).toLocaleString("pt-BR")}</span>
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Responsável: {r.responsavelNome ?? "—"}
-                    </div>
-                  </button>
+                  </div>
                 ))}
               </div>
 
@@ -147,7 +172,7 @@ function RegistrosPage() {
                     <TableHead>Setor</TableHead>
                     <TableHead>Responsável</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="w-16" />
+                    <TableHead className="w-24" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -168,9 +193,20 @@ function RegistrosPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button size="icon" variant="ghost" onClick={() => setOpenId(r.id)}>
-                          <ImageIcon className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button size="icon" variant="ghost" onClick={() => setOpenId(r.id)}>
+                            <ImageIcon className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => {
+                              if (confirm("Excluir este registro?")) excluir.mutate(r.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -191,13 +227,25 @@ function RegistrosPage() {
             <div className="flex flex-wrap items-center justify-between gap-2 pr-6">
               <DialogTitle>Detalhes do registro</DialogTitle>
               {detalhe && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => exportRegistroDetalhePdf(detalhe)}
-                >
-                  <FileDown className="mr-2 h-4 w-4" /> Exportar PDF
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => exportRegistroDetalhePdf(detalhe)}
+                  >
+                    <FileDown className="mr-2 h-4 w-4" /> Exportar PDF
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => {
+                      if (confirm("Excluir este registro?")) excluir.mutate(detalhe.id);
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                  </Button>
+                </div>
               )}
             </div>
           </DialogHeader>

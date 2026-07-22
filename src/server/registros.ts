@@ -57,6 +57,12 @@ export const listRegistrosDesde = createServerFn()
       .orderBy(desc(registrosLimpeza.dataHora));
   });
 
+export const deleteRegistro = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await getDb().delete(registrosLimpeza).where(eq(registrosLimpeza.id, data.id));
+  });
+
 export const createRegistro = createServerFn({ method: "POST" })
   .validator(
     z.object({
