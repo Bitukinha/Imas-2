@@ -1,5 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, ClipboardList, Magnet, Building2, Users } from "lucide-react";
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Magnet,
+  Building2,
+  Users,
+  ListChecks,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -16,6 +23,7 @@ import {
 const items = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Registros", url: "/registros", icon: ClipboardList },
+  { title: "Pendências", url: "/pendencias", icon: ListChecks },
   { title: "Ímãs", url: "/imas", icon: Magnet },
   { title: "Setores", url: "/setores", icon: Building2 },
   { title: "Usuários", url: "/usuarios", icon: Users },

@@ -41,3 +41,29 @@ export function diasUteis6x1(inicio: Date, fim: Date): number {
   }
   return count;
 }
+
+/**
+ * Mesma regra de diasUteis6x1, mas retorna a lista de datas (00:00) em vez da contagem.
+ */
+export function diasUteis6x1Lista(inicio: Date, fim: Date): Date[] {
+  const dias: Date[] = [];
+  const d = new Date(inicio);
+  d.setHours(0, 0, 0, 0);
+  const end = new Date(fim);
+  end.setHours(0, 0, 0, 0);
+  while (d <= end) {
+    if (d.getDay() !== 0) dias.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return dias;
+}
+
+export const TURNOS: Turno[] = ["A", "B", "C"];
+
+/** Chave AAAA-MM-DD em horário local, para agrupar/comparar datas por dia. */
+export function diaKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}

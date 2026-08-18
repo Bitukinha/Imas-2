@@ -13,6 +13,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedUsuariosRouteImport } from './routes/_authenticated/usuarios'
 import { Route as AuthenticatedSetoresRouteImport } from './routes/_authenticated/setores'
+import { Route as AuthenticatedPendenciasRouteImport } from './routes/_authenticated/pendencias'
 import { Route as AuthenticatedImasRouteImport } from './routes/_authenticated/imas'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedRegistrosIndexRouteImport } from './routes/_authenticated/registros/index'
@@ -35,6 +36,11 @@ const AuthenticatedUsuariosRoute = AuthenticatedUsuariosRouteImport.update({
 const AuthenticatedSetoresRoute = AuthenticatedSetoresRouteImport.update({
   id: '/setores',
   path: '/setores',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedPendenciasRoute = AuthenticatedPendenciasRouteImport.update({
+  id: '/pendencias',
+  path: '/pendencias',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedImasRoute = AuthenticatedImasRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/imas': typeof AuthenticatedImasRoute
+  '/pendencias': typeof AuthenticatedPendenciasRoute
   '/setores': typeof AuthenticatedSetoresRoute
   '/usuarios': typeof AuthenticatedUsuariosRoute
   '/registros/novo': typeof AuthenticatedRegistrosNovoRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/imas': typeof AuthenticatedImasRoute
+  '/pendencias': typeof AuthenticatedPendenciasRoute
   '/setores': typeof AuthenticatedSetoresRoute
   '/usuarios': typeof AuthenticatedUsuariosRoute
   '/registros/novo': typeof AuthenticatedRegistrosNovoRoute
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/imas': typeof AuthenticatedImasRoute
+  '/_authenticated/pendencias': typeof AuthenticatedPendenciasRoute
   '/_authenticated/setores': typeof AuthenticatedSetoresRoute
   '/_authenticated/usuarios': typeof AuthenticatedUsuariosRoute
   '/_authenticated/registros/novo': typeof AuthenticatedRegistrosNovoRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/imas'
+    | '/pendencias'
     | '/setores'
     | '/usuarios'
     | '/registros/novo'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/imas'
+    | '/pendencias'
     | '/setores'
     | '/usuarios'
     | '/registros/novo'
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/_authenticated/dashboard'
     | '/_authenticated/imas'
+    | '/_authenticated/pendencias'
     | '/_authenticated/setores'
     | '/_authenticated/usuarios'
     | '/_authenticated/registros/novo'
@@ -155,6 +167,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSetoresRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/pendencias': {
+      id: '/_authenticated/pendencias'
+      path: '/pendencias'
+      fullPath: '/pendencias'
+      preLoaderRoute: typeof AuthenticatedPendenciasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/imas': {
       id: '/_authenticated/imas'
       path: '/imas'
@@ -189,6 +208,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedImasRoute: typeof AuthenticatedImasRoute
+  AuthenticatedPendenciasRoute: typeof AuthenticatedPendenciasRoute
   AuthenticatedSetoresRoute: typeof AuthenticatedSetoresRoute
   AuthenticatedUsuariosRoute: typeof AuthenticatedUsuariosRoute
   AuthenticatedRegistrosNovoRoute: typeof AuthenticatedRegistrosNovoRoute
@@ -198,6 +218,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedImasRoute: AuthenticatedImasRoute,
+  AuthenticatedPendenciasRoute: AuthenticatedPendenciasRoute,
   AuthenticatedSetoresRoute: AuthenticatedSetoresRoute,
   AuthenticatedUsuariosRoute: AuthenticatedUsuariosRoute,
   AuthenticatedRegistrosNovoRoute: AuthenticatedRegistrosNovoRoute,
