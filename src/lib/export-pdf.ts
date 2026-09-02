@@ -13,6 +13,7 @@ type RegistroRow = {
 };
 
 type RegistroDetalhe = RegistroRow & {
+  id: string;
   fotoConformeId: string | null;
   fotoSujoId: string | null;
   fotoLimpoId: string | null;
@@ -62,7 +63,7 @@ export async function exportRegistrosPdf(registros: RegistroRow[]) {
   doc.save(`registros-limpeza-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
-export async function exportRegistroDetalhePdf(detalhe: RegistroDetalhe) {
+async function buildRegistroDetalhePdf(detalhe: RegistroDetalhe) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
   const marginX = 40;
@@ -150,7 +151,43 @@ export async function exportRegistroDetalhePdf(detalhe: RegistroDetalhe) {
     }
   }
 
+  return doc;
+}
+
+export async function exportRegistroDetalhePdf(detalhe: RegistroDetalhe) {
+  const doc = await buildRegistroDetalhePdf(detalhe);
   doc.save(`registro-${new Date(detalhe.dataHora).toISOString().slice(0, 10)}.pdf`);
+}
+
+function nomeArquivoRegistro(detalhe: RegistroDetalhe) {
+  const data = new Date(detalhe.dataHora).toISOString().slice(0, 10);
+  const ima = (detalhe.imaCodigo ?? "sem-ima").replace(/[^a-zA-Z0-9-]+/g, "_");
+  return `registro-${data}-${ima}-${detalhe.id.slice(0, 8)}.pdf`;
+}
+
+export async function exportRegistrosDetalhadosZip(
+  registros: RegistroDetalhe[],
+  onProgress?: (feito: number, total: number) => void,
+) {
+  const [{ default: JSZip }] = await Promise.all([import("jszip")]);
+  const zip = new JSZip();
+
+  for (let i = 0; i < registros.length; i++) {
+    const detalhe = registros[i];
+    const doc = await buildRegistroDetalhePdf(detalhe);
+    zip.file(nomeArquivoRegistro(detalhe), doc.output("arraybuffer"));
+    onProgress?.(i + 1, registros.length);
+  }
+
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `registros-limpeza-${new Date().toISOString().slice(0, 10)}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 type Turno = "A" | "B" | "C";

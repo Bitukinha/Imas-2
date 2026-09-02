@@ -20,11 +20,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, ImageIcon, FileDown, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, ImageIcon, FileDown, FolderDown, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignedImage } from "@/components/SignedImage";
 import { deleteRegistro, listRegistros, listRegistrosParaExport } from "@/server/registros";
-import { exportRegistrosPdf, exportRegistroDetalhePdf } from "@/lib/export-pdf";
+import { listSetores } from "@/server/setores";
+import {
+  exportRegistrosPdf,
+  exportRegistroDetalhePdf,
+  exportRegistrosDetalhadosZip,
+} from "@/lib/export-pdf";
 
 export const Route = createFileRoute("/_authenticated/registros/")({
   component: RegistrosPage,
@@ -37,17 +42,26 @@ function RegistrosPage() {
   const qc = useQueryClient();
   const [filtroTurno, setFiltroTurno] = useState<TurnoFiltro>("all");
   const [filtroStatus, setFiltroStatus] = useState<StatusFiltro>("all");
+  const [filtroSetor, setFiltroSetor] = useState<string>("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [exportando, setExportando] = useState(false);
+  const [baixandoZip, setBaixandoZip] = useState(false);
+  const [progressoZip, setProgressoZip] = useState<{ feito: number; total: number } | null>(null);
+
+  const { data: setores } = useQuery({
+    queryKey: ["setores"],
+    queryFn: () => listSetores(),
+  });
 
   const filtros = {
     turno: filtroTurno === "all" ? undefined : filtroTurno,
     status: filtroStatus === "all" ? undefined : filtroStatus,
+    setorId: filtroSetor === "all" ? undefined : filtroSetor,
   } as const;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["registros", filtroTurno, filtroStatus, page],
+    queryKey: ["registros", filtroTurno, filtroStatus, filtroSetor, page],
     queryFn: () => listRegistros({ data: { ...filtros, page } }),
   });
 
@@ -57,7 +71,7 @@ function RegistrosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [filtroTurno, filtroStatus]);
+  }, [filtroTurno, filtroStatus, filtroSetor]);
 
   useEffect(() => {
     if (!isLoading && registros.length === 0 && page > 1) setPage(page - 1);
@@ -89,6 +103,27 @@ function RegistrosPage() {
     }
   };
 
+  const baixarTodosPdfs = async () => {
+    setBaixandoZip(true);
+    setProgressoZip(null);
+    try {
+      const todos = await listRegistrosParaExport({ data: filtros });
+      if (todos.length === 0) {
+        toast.error("Nenhum registro para baixar");
+        return;
+      }
+      await exportRegistrosDetalhadosZip(todos, (feito, total) =>
+        setProgressoZip({ feito, total }),
+      );
+      toast.success(`${todos.length} PDFs baixados`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao gerar os PDFs");
+    } finally {
+      setBaixandoZip(false);
+      setProgressoZip(null);
+    }
+  };
+
   const detalhe = registros.find((r) => r.id === openId) ?? null;
 
   return (
@@ -107,6 +142,18 @@ function RegistrosPage() {
             onClick={exportarPdf}
           >
             <FileDown className="mr-2 h-4 w-4" /> {exportando ? "Exportando..." : "Exportar PDF"}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={total === 0 || baixandoZip}
+            onClick={baixarTodosPdfs}
+          >
+            <FolderDown className="mr-2 h-4 w-4" />
+            {baixandoZip
+              ? progressoZip
+                ? `Gerando ${progressoZip.feito}/${progressoZip.total}...`
+                : "Preparando..."
+              : "Baixar todos PDFs"}
           </Button>
           <Button asChild>
             <Link to="/registros/novo">
@@ -136,6 +183,19 @@ function RegistrosPage() {
             <SelectItem value="all">Todos os status</SelectItem>
             <SelectItem value="conforme">Conforme</SelectItem>
             <SelectItem value="nao_conforme">Não conforme</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filtroSetor} onValueChange={setFiltroSetor}>
+          <SelectTrigger className="w-full sm:w-48">
+            <SelectValue placeholder="Setor" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os setores</SelectItem>
+            {setores?.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.nome}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

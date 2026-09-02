@@ -43,6 +43,7 @@ export const listRegistros = createServerFn()
       .object({
         turno: turnoSchema.optional(),
         status: statusSchema.optional(),
+        setorId: z.string().optional(),
         page: z.number().int().min(1).optional(),
       })
       .optional(),
@@ -51,6 +52,7 @@ export const listRegistros = createServerFn()
     const conditions = [];
     if (data?.turno) conditions.push(eq(registrosLimpeza.turno, data.turno));
     if (data?.status) conditions.push(eq(registrosLimpeza.status, data.status));
+    if (data?.setorId) conditions.push(eq(registrosLimpeza.setorId, data.setorId));
     const where = conditions.length ? and(...conditions) : undefined;
     const page = data?.page ?? 1;
 
@@ -68,12 +70,19 @@ export const listRegistros = createServerFn()
 
 export const listRegistrosParaExport = createServerFn()
   .validator(
-    z.object({ turno: turnoSchema.optional(), status: statusSchema.optional() }).optional(),
+    z
+      .object({
+        turno: turnoSchema.optional(),
+        status: statusSchema.optional(),
+        setorId: z.string().optional(),
+      })
+      .optional(),
   )
   .handler(async ({ data }) => {
     const conditions = [];
     if (data?.turno) conditions.push(eq(registrosLimpeza.turno, data.turno));
     if (data?.status) conditions.push(eq(registrosLimpeza.status, data.status));
+    if (data?.setorId) conditions.push(eq(registrosLimpeza.setorId, data.setorId));
     return baseSelect()
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(registrosLimpeza.dataHora));
