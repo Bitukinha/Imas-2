@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,10 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, ImageIcon, FileDown, Trash2 } from "lucide-react";
+import { Plus, ImageIcon, FileDown, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignedImage } from "@/components/SignedImage";
-import { deleteRegistro, listRegistros } from "@/server/registros";
+import { deleteRegistro, listRegistros, listRegistrosParaExport } from "@/server/registros";
 import { exportRegistrosPdf, exportRegistroDetalhePdf } from "@/lib/export-pdf";
 
 export const Route = createFileRoute("/_authenticated/registros/")({
@@ -38,17 +38,30 @@ function RegistrosPage() {
   const [filtroTurno, setFiltroTurno] = useState<TurnoFiltro>("all");
   const [filtroStatus, setFiltroStatus] = useState<StatusFiltro>("all");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [exportando, setExportando] = useState(false);
 
-  const { data: registros, isLoading } = useQuery({
-    queryKey: ["registros", filtroTurno, filtroStatus],
-    queryFn: () =>
-      listRegistros({
-        data: {
-          turno: filtroTurno === "all" ? undefined : filtroTurno,
-          status: filtroStatus === "all" ? undefined : filtroStatus,
-        },
-      }),
+  const filtros = {
+    turno: filtroTurno === "all" ? undefined : filtroTurno,
+    status: filtroStatus === "all" ? undefined : filtroStatus,
+  } as const;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["registros", filtroTurno, filtroStatus, page],
+    queryFn: () => listRegistros({ data: { ...filtros, page } }),
   });
+
+  const registros = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / (data?.pageSize ?? 1)));
+
+  useEffect(() => {
+    setPage(1);
+  }, [filtroTurno, filtroStatus]);
+
+  useEffect(() => {
+    if (!isLoading && registros.length === 0 && page > 1) setPage(page - 1);
+  }, [isLoading, registros.length, page]);
 
   const excluir = useMutation({
     mutationFn: (id: string) => deleteRegistro({ data: { id } }),
@@ -60,7 +73,23 @@ function RegistrosPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const detalhe = registros?.find((r) => r.id === openId) ?? null;
+  const exportarPdf = async () => {
+    setExportando(true);
+    try {
+      const todos = await listRegistrosParaExport({ data: filtros });
+      if (todos.length === 0) {
+        toast.error("Nenhum registro para exportar");
+        return;
+      }
+      await exportRegistrosPdf(todos);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF");
+    } finally {
+      setExportando(false);
+    }
+  };
+
+  const detalhe = registros.find((r) => r.id === openId) ?? null;
 
   return (
     <div className="space-y-6">
@@ -74,10 +103,10 @@ function RegistrosPage() {
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button
             variant="outline"
-            disabled={!registros || registros.length === 0}
-            onClick={() => registros && exportRegistrosPdf(registros)}
+            disabled={total === 0 || exportando}
+            onClick={exportarPdf}
           >
-            <FileDown className="mr-2 h-4 w-4" /> Exportar PDF
+            <FileDown className="mr-2 h-4 w-4" /> {exportando ? "Exportando..." : "Exportar PDF"}
           </Button>
           <Button asChild>
             <Link to="/registros/novo">
@@ -114,12 +143,12 @@ function RegistrosPage() {
       <Card>
         <CardHeader>
           <CardTitle>Últimos registros</CardTitle>
-          <CardDescription>{registros?.length ?? 0} registros</CardDescription>
+          <CardDescription>{total} registros</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Carregando...</p>
-          ) : registros && registros.length > 0 ? (
+          ) : registros.length > 0 ? (
             <>
               {/* Lista em cartões — telas pequenas */}
               <div className="space-y-3 md:hidden">
@@ -212,6 +241,30 @@ function RegistrosPage() {
                   ))}
                 </TableBody>
               </Table>
+
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Página {page} de {totalPages}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className="mr-1 h-4 w-4" /> Anterior
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Próxima <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
             </>
           ) : (
             <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">

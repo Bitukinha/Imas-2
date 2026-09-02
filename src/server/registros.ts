@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, count, desc, eq, gte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { getDb } from "@/db/client";
@@ -7,6 +7,8 @@ import { imas, registrosLimpeza, setores, usuarios } from "@/db/schema";
 
 const turnoSchema = z.enum(["A", "B", "C"]);
 const statusSchema = z.enum(["conforme", "nao_conforme"]);
+
+export const REGISTROS_PAGE_SIZE = 50;
 
 const responsavelUsuarios = alias(usuarios, "responsavel");
 const monitorUsuarios = alias(usuarios, "monitor");
@@ -37,6 +39,35 @@ function baseSelect() {
 
 export const listRegistros = createServerFn()
   .validator(
+    z
+      .object({
+        turno: turnoSchema.optional(),
+        status: statusSchema.optional(),
+        page: z.number().int().min(1).optional(),
+      })
+      .optional(),
+  )
+  .handler(async ({ data }) => {
+    const conditions = [];
+    if (data?.turno) conditions.push(eq(registrosLimpeza.turno, data.turno));
+    if (data?.status) conditions.push(eq(registrosLimpeza.status, data.status));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const page = data?.page ?? 1;
+
+    const [items, [{ total }]] = await Promise.all([
+      baseSelect()
+        .where(where)
+        .orderBy(desc(registrosLimpeza.dataHora))
+        .limit(REGISTROS_PAGE_SIZE)
+        .offset((page - 1) * REGISTROS_PAGE_SIZE),
+      getDb().select({ total: count() }).from(registrosLimpeza).where(where),
+    ]);
+
+    return { items, total, page, pageSize: REGISTROS_PAGE_SIZE };
+  });
+
+export const listRegistrosParaExport = createServerFn()
+  .validator(
     z.object({ turno: turnoSchema.optional(), status: statusSchema.optional() }).optional(),
   )
   .handler(async ({ data }) => {
@@ -45,8 +76,7 @@ export const listRegistros = createServerFn()
     if (data?.status) conditions.push(eq(registrosLimpeza.status, data.status));
     return baseSelect()
       .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(registrosLimpeza.dataHora))
-      .limit(200);
+      .orderBy(desc(registrosLimpeza.dataHora));
   });
 
 export const listRegistrosDesde = createServerFn()
