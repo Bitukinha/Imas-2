@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function DashboardPage() {
-  const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial("30d"));
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial("mes"));
   const [exportando, setExportando] = useState(false);
   const agora = useAgora();
   const hojeKey = diaKey(agora);
