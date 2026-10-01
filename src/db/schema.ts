@@ -28,6 +28,10 @@ export const imas = pgTable("imas", {
     .notNull()
     .references(() => setores.id, { onDelete: "restrict" }),
   ativo: boolean("ativo").notNull().default(true),
+  // "turno": limpeza 1x por turno (A, B e C). "diaria": limpeza 1x por dia, em qualquer turno.
+  frequencia: text("frequencia", { enum: ["turno", "diaria"] })
+    .notNull()
+    .default("turno"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

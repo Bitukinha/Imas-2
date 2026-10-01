@@ -4,6 +4,8 @@ import { z } from "zod";
 import { getDb } from "@/db/client";
 import { imas, setores } from "@/db/schema";
 
+const frequenciaSchema = z.enum(["turno", "diaria"]);
+
 export const listImas = createServerFn().handler(async () => {
   const rows = await getDb()
     .select({
@@ -12,6 +14,7 @@ export const listImas = createServerFn().handler(async () => {
       descricao: imas.descricao,
       setorId: imas.setorId,
       ativo: imas.ativo,
+      frequencia: imas.frequencia,
       setorNome: setores.nome,
     })
     .from(imas)
@@ -26,6 +29,7 @@ export const listImasAtivos = createServerFn().handler(async () => {
       id: imas.id,
       codigo: imas.codigo,
       setorId: imas.setorId,
+      frequencia: imas.frequencia,
       setorNome: setores.nome,
     })
     .from(imas)
@@ -35,19 +39,24 @@ export const listImasAtivos = createServerFn().handler(async () => {
   return rows;
 });
 
-export const countImasAtivos = createServerFn().handler(async () => {
-  const rows = await getDb().select({ id: imas.id }).from(imas).where(eq(imas.ativo, true));
-  return rows.length;
-});
-
 export const createIma = createServerFn({ method: "POST" })
   .validator(
-    z.object({ codigo: z.string().min(1), descricao: z.string().optional(), setorId: z.string() }),
+    z.object({
+      codigo: z.string().min(1),
+      descricao: z.string().optional(),
+      setorId: z.string(),
+      frequencia: frequenciaSchema.optional(),
+    }),
   )
   .handler(async ({ data }) => {
     const [row] = await getDb()
       .insert(imas)
-      .values({ codigo: data.codigo, descricao: data.descricao || null, setorId: data.setorId })
+      .values({
+        codigo: data.codigo,
+        descricao: data.descricao || null,
+        setorId: data.setorId,
+        frequencia: data.frequencia ?? "turno",
+      })
       .returning();
     return row;
   });
@@ -56,4 +65,10 @@ export const setImaAtivo = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string(), ativo: z.boolean() }))
   .handler(async ({ data }) => {
     await getDb().update(imas).set({ ativo: data.ativo }).where(eq(imas.id, data.id));
+  });
+
+export const setImaFrequencia = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string(), frequencia: frequenciaSchema }))
+  .handler(async ({ data }) => {
+    await getDb().update(imas).set({ frequencia: data.frequencia }).where(eq(imas.id, data.id));
   });

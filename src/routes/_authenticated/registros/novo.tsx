@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -68,6 +68,8 @@ function NovoRegistroPage() {
     return uploadArquivo({ data: { contentType, dataBase64: base64 } });
   };
 
+  const qc = useQueryClient();
+
   const submit = useMutation({
     mutationFn: async () => {
       if (!imaId) throw new Error("Selecione o ímã");
@@ -106,6 +108,7 @@ function NovoRegistroPage() {
     },
     onSuccess: () => {
       toast.success("Registro salvo");
+      qc.invalidateQueries({ queryKey: ["pendencias-hoje"] });
       navigate({ to: "/registros" });
     },
     onError: (e: Error) => toast.error(e.message),

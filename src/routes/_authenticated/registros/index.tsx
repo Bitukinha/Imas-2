@@ -20,11 +20,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, ImageIcon, FileDown, FolderDown, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Plus,
+  ImageIcon,
+  FileDown,
+  FolderDown,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignedImage } from "@/components/SignedImage";
 import { deleteRegistro, listRegistros, listRegistrosParaExport } from "@/server/registros";
 import { listSetores } from "@/server/setores";
+import { PeriodoFilter } from "@/components/PeriodoFilter";
+import { periodoInicial, resolverPeriodo, type Periodo } from "@/lib/periodo";
 import {
   exportRegistrosPdf,
   exportRegistroDetalhePdf,
@@ -43,6 +53,7 @@ function RegistrosPage() {
   const [filtroTurno, setFiltroTurno] = useState<TurnoFiltro>("all");
   const [filtroStatus, setFiltroStatus] = useState<StatusFiltro>("all");
   const [filtroSetor, setFiltroSetor] = useState<string>("all");
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial("tudo"));
   const [openId, setOpenId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [exportando, setExportando] = useState(false);
@@ -54,14 +65,18 @@ function RegistrosPage() {
     queryFn: () => listSetores(),
   });
 
+  const resolvido = resolverPeriodo(periodo);
   const filtros = {
     turno: filtroTurno === "all" ? undefined : filtroTurno,
     status: filtroStatus === "all" ? undefined : filtroStatus,
     setorId: filtroSetor === "all" ? undefined : filtroSetor,
+    de: resolvido.inicio?.toISOString(),
+    // "Todo o período" não limita a data final, para não esconder registros recém-criados.
+    ate: periodo.preset === "tudo" ? undefined : resolvido.fim.toISOString(),
   } as const;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["registros", filtroTurno, filtroStatus, filtroSetor, page],
+    queryKey: ["registros", filtroTurno, filtroStatus, filtroSetor, filtros.de, filtros.ate, page],
     queryFn: () => listRegistros({ data: { ...filtros, page } }),
   });
 
@@ -71,7 +86,7 @@ function RegistrosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [filtroTurno, filtroStatus, filtroSetor]);
+  }, [filtroTurno, filtroStatus, filtroSetor, filtros.de, filtros.ate]);
 
   useEffect(() => {
     if (!isLoading && registros.length === 0 && page > 1) setPage(page - 1);
@@ -95,7 +110,7 @@ function RegistrosPage() {
         toast.error("Nenhum registro para exportar");
         return;
       }
-      await exportRegistrosPdf(todos);
+      await exportRegistrosPdf(todos, resolvido);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF");
     } finally {
@@ -112,8 +127,10 @@ function RegistrosPage() {
         toast.error("Nenhum registro para baixar");
         return;
       }
-      await exportRegistrosDetalhadosZip(todos, (feito, total) =>
-        setProgressoZip({ feito, total }),
+      await exportRegistrosDetalhadosZip(
+        todos,
+        (feito, total) => setProgressoZip({ feito, total }),
+        resolvido,
       );
       toast.success(`${todos.length} PDFs baixados`);
     } catch (e) {
@@ -136,18 +153,10 @@ function RegistrosPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button
-            variant="outline"
-            disabled={total === 0 || exportando}
-            onClick={exportarPdf}
-          >
+          <Button variant="outline" disabled={total === 0 || exportando} onClick={exportarPdf}>
             <FileDown className="mr-2 h-4 w-4" /> {exportando ? "Exportando..." : "Exportar PDF"}
           </Button>
-          <Button
-            variant="outline"
-            disabled={total === 0 || baixandoZip}
-            onClick={baixarTodosPdfs}
-          >
+          <Button variant="outline" disabled={total === 0 || baixandoZip} onClick={baixarTodosPdfs}>
             <FolderDown className="mr-2 h-4 w-4" />
             {baixandoZip
               ? progressoZip
@@ -163,7 +172,8 @@ function RegistrosPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+        <PeriodoFilter value={periodo} onChange={setPeriodo} permitirTudo />
         <Select value={filtroTurno} onValueChange={(v) => setFiltroTurno(v as TurnoFiltro)}>
           <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="Turno" />
@@ -203,7 +213,9 @@ function RegistrosPage() {
       <Card>
         <CardHeader>
           <CardTitle>Últimos registros</CardTitle>
-          <CardDescription>{total} registros</CardDescription>
+          <CardDescription>
+            {total} registros · {resolvido.titulo}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -214,10 +226,7 @@ function RegistrosPage() {
               <div className="space-y-3 md:hidden">
                 {registros.map((r) => (
                   <div key={r.id} className="w-full rounded-lg border p-3">
-                    <button
-                      onClick={() => setOpenId(r.id)}
-                      className="w-full text-left"
-                    >
+                    <button onClick={() => setOpenId(r.id)} className="w-full text-left">
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-medium">{r.imaCodigo}</div>
                         {r.status === "conforme" ? (

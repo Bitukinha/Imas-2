@@ -32,7 +32,14 @@ import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { Plus, Power, PowerOff } from "lucide-react";
 import { toast } from "sonner";
-import { createIma, listImas, setImaAtivo } from "@/server/imas";
+import { createIma, listImas, setImaAtivo, setImaFrequencia } from "@/server/imas";
+
+type Frequencia = "turno" | "diaria";
+
+const frequenciaLabel: Record<Frequencia, string> = {
+  turno: "1x por turno (A, B, C)",
+  diaria: "Comercial — 1x por dia (08–17)",
+};
 import { listSetores } from "@/server/setores";
 
 export const Route = createFileRoute("/_authenticated/imas")({
@@ -45,6 +52,7 @@ function ImasPage() {
   const [codigo, setCodigo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [setorId, setSetorId] = useState<string>("");
+  const [frequencia, setFrequencia] = useState<Frequencia>("turno");
 
   const { data: setores } = useQuery({
     queryKey: ["setores"],
@@ -57,7 +65,8 @@ function ImasPage() {
   });
 
   const criar = useMutation({
-    mutationFn: () => createIma({ data: { codigo, descricao: descricao || undefined, setorId } }),
+    mutationFn: () =>
+      createIma({ data: { codigo, descricao: descricao || undefined, setorId, frequencia } }),
     onSuccess: () => {
       toast.success("Ímã cadastrado");
       qc.invalidateQueries({ queryKey: ["imas"] });
@@ -65,6 +74,7 @@ function ImasPage() {
       setCodigo("");
       setDescricao("");
       setSetorId("");
+      setFrequencia("turno");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -73,6 +83,16 @@ function ImasPage() {
     mutationFn: (ima: { id: string; ativo: boolean }) =>
       setImaAtivo({ data: { id: ima.id, ativo: !ima.ativo } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["imas"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const alterarFrequencia = useMutation({
+    mutationFn: (ima: { id: string; frequencia: Frequencia }) => setImaFrequencia({ data: ima }),
+    onSuccess: () => {
+      toast.success("Frequência atualizada");
+      qc.invalidateQueries({ queryKey: ["imas"] });
+      qc.invalidateQueries({ queryKey: ["imas-ativos"] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -127,6 +147,18 @@ function ImasPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Frequência de limpeza</Label>
+                <Select value={frequencia} onValueChange={(v) => setFrequencia(v as Frequencia)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="turno">{frequenciaLabel.turno}</SelectItem>
+                    <SelectItem value="diaria">{frequenciaLabel.diaria}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <DialogFooter>
               <Button
@@ -155,6 +187,7 @@ function ImasPage() {
                   <TableHead>Código</TableHead>
                   <TableHead>Descrição</TableHead>
                   <TableHead>Setor</TableHead>
+                  <TableHead>Frequência</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-16" />
                 </TableRow>
@@ -165,6 +198,22 @@ function ImasPage() {
                     <TableCell className="font-medium">{i.codigo}</TableCell>
                     <TableCell className="text-muted-foreground">{i.descricao ?? "—"}</TableCell>
                     <TableCell>{i.setorNome}</TableCell>
+                    <TableCell>
+                      <Select
+                        value={i.frequencia}
+                        onValueChange={(v) =>
+                          alterarFrequencia.mutate({ id: i.id, frequencia: v as Frequencia })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-56">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="turno">{frequenciaLabel.turno}</SelectItem>
+                          <SelectItem value="diaria">{frequenciaLabel.diaria}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                     <TableCell>
                       {i.ativo ? (
                         <Badge className="bg-success text-success-foreground">Ativo</Badge>

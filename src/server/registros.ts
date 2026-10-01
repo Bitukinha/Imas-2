@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, count, desc, eq, gte } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { getDb } from "@/db/client";
@@ -10,6 +10,25 @@ const statusSchema = z.enum(["conforme", "nao_conforme"]);
 
 export const REGISTROS_PAGE_SIZE = 50;
 
+// Período: ISO strings; "de" é inclusivo a partir de, "ate" é inclusivo até.
+const filtrosSchema = z.object({
+  turno: turnoSchema.optional(),
+  status: statusSchema.optional(),
+  setorId: z.string().optional(),
+  de: z.string().optional(),
+  ate: z.string().optional(),
+});
+
+function filtrosWhere(data?: z.infer<typeof filtrosSchema>) {
+  const conditions = [];
+  if (data?.turno) conditions.push(eq(registrosLimpeza.turno, data.turno));
+  if (data?.status) conditions.push(eq(registrosLimpeza.status, data.status));
+  if (data?.setorId) conditions.push(eq(registrosLimpeza.setorId, data.setorId));
+  if (data?.de) conditions.push(gte(registrosLimpeza.dataHora, new Date(data.de)));
+  if (data?.ate) conditions.push(lte(registrosLimpeza.dataHora, new Date(data.ate)));
+  return conditions.length ? and(...conditions) : undefined;
+}
+
 const responsavelUsuarios = alias(usuarios, "responsavel");
 const monitorUsuarios = alias(usuarios, "monitor");
 
@@ -19,6 +38,7 @@ function baseSelect() {
       id: registrosLimpeza.id,
       dataHora: registrosLimpeza.dataHora,
       turno: registrosLimpeza.turno,
+      imaId: registrosLimpeza.imaId,
       status: registrosLimpeza.status,
       acaoTomada: registrosLimpeza.acaoTomada,
       observacoes: registrosLimpeza.observacoes,
@@ -38,22 +58,9 @@ function baseSelect() {
 }
 
 export const listRegistros = createServerFn()
-  .validator(
-    z
-      .object({
-        turno: turnoSchema.optional(),
-        status: statusSchema.optional(),
-        setorId: z.string().optional(),
-        page: z.number().int().min(1).optional(),
-      })
-      .optional(),
-  )
+  .validator(filtrosSchema.extend({ page: z.number().int().min(1).optional() }).optional())
   .handler(async ({ data }) => {
-    const conditions = [];
-    if (data?.turno) conditions.push(eq(registrosLimpeza.turno, data.turno));
-    if (data?.status) conditions.push(eq(registrosLimpeza.status, data.status));
-    if (data?.setorId) conditions.push(eq(registrosLimpeza.setorId, data.setorId));
-    const where = conditions.length ? and(...conditions) : undefined;
+    const where = filtrosWhere(data);
     const page = data?.page ?? 1;
 
     const [items, [{ total }]] = await Promise.all([
@@ -69,31 +76,15 @@ export const listRegistros = createServerFn()
   });
 
 export const listRegistrosParaExport = createServerFn()
-  .validator(
-    z
-      .object({
-        turno: turnoSchema.optional(),
-        status: statusSchema.optional(),
-        setorId: z.string().optional(),
-      })
-      .optional(),
-  )
+  .validator(filtrosSchema.optional())
   .handler(async ({ data }) => {
-    const conditions = [];
-    if (data?.turno) conditions.push(eq(registrosLimpeza.turno, data.turno));
-    if (data?.status) conditions.push(eq(registrosLimpeza.status, data.status));
-    if (data?.setorId) conditions.push(eq(registrosLimpeza.setorId, data.setorId));
-    return baseSelect()
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(registrosLimpeza.dataHora));
+    return baseSelect().where(filtrosWhere(data)).orderBy(desc(registrosLimpeza.dataHora));
   });
 
-export const listRegistrosDesde = createServerFn()
-  .validator(z.object({ desde: z.string() }))
+export const listRegistrosPeriodo = createServerFn()
+  .validator(z.object({ de: z.string(), ate: z.string() }))
   .handler(async ({ data }) => {
-    return baseSelect()
-      .where(gte(registrosLimpeza.dataHora, new Date(data.desde)))
-      .orderBy(desc(registrosLimpeza.dataHora));
+    return baseSelect().where(filtrosWhere(data)).orderBy(desc(registrosLimpeza.dataHora));
   });
 
 export const deleteRegistro = createServerFn({ method: "POST" })

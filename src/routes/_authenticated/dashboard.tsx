@@ -1,17 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listRegistrosDesde } from "@/server/registros";
-import { countImasAtivos } from "@/server/imas";
+import { listRegistrosPeriodo } from "@/server/registros";
+import { listImasAtivos } from "@/server/imas";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { exportDashboardPdf } from "@/lib/export-pdf";
@@ -30,40 +23,45 @@ import {
   Legend,
 } from "recharts";
 import { CheckCircle2, AlertTriangle, Activity, TrendingUp, FileDown } from "lucide-react";
-import { diasUteis6x1, turnoLabel, type Turno } from "@/lib/turno";
+import { diaKey, diasUteis6x1, TURNOS, turnoLabel, type Turno } from "@/lib/turno";
+import { PeriodoFilter } from "@/components/PeriodoFilter";
+import { periodoInicial, resolverPeriodo, type Periodo } from "@/lib/periodo";
+import { calcularPendencias, fimBuscaRegistros, slotLabel, useAgora } from "@/lib/pendencias";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: DashboardPage,
 });
 
-type Periodo = "7d" | "30d" | "90d";
-
-const periodoInfo: Record<Periodo, { titulo: string; arquivo: string }> = {
-  "7d": { titulo: "Últimos 7 dias", arquivo: "ultimos-7-dias" },
-  "30d": { titulo: "Últimos 30 dias", arquivo: "ultimos-30-dias" },
-  "90d": { titulo: "Últimos 90 dias", arquivo: "ultimos-90-dias" },
-};
-
 function DashboardPage() {
-  const [periodo, setPeriodo] = useState<Periodo>("30d");
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial("30d"));
   const [exportando, setExportando] = useState(false);
+  const agora = useAgora();
+  const hojeKey = diaKey(agora);
 
-  const desde = useMemo(() => {
-    const dias = periodo === "7d" ? 7 : periodo === "30d" ? 30 : 90;
-    const d = new Date();
-    d.setDate(d.getDate() - dias);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, [periodo]);
+  const resolvido = useMemo(
+    () => resolverPeriodo(periodo, agora),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [periodo, hojeKey],
+  );
+  const desde = resolvido.inicio ?? new Date(0);
+  const ate = resolvido.fim;
 
-  const { data: registros, isLoading } = useQuery({
-    queryKey: ["dashboard-registros", periodo],
-    queryFn: () => listRegistrosDesde({ data: { desde: desde.toISOString() } }),
+  // Busca até as 06:00 seguintes para incluir o turno C do último dia na aderência.
+  const { data: registrosBusca, isLoading } = useQuery({
+    queryKey: ["dashboard-registros", desde.toISOString(), ate.toISOString()],
+    queryFn: () =>
+      listRegistrosPeriodo({
+        data: { de: desde.toISOString(), ate: fimBuscaRegistros(ate).toISOString() },
+      }),
   });
+  const registros = useMemo(
+    () => registrosBusca?.filter((r) => new Date(r.dataHora) <= ate),
+    [registrosBusca, ate],
+  );
 
-  const { data: imasCount } = useQuery({
-    queryKey: ["imas-count"],
-    queryFn: () => countImasAtivos(),
+  const { data: imasAtivos } = useQuery({
+    queryKey: ["imas-ativos"],
+    queryFn: () => listImasAtivos(),
   });
 
   const stats = useMemo(() => {
@@ -108,26 +106,29 @@ function DashboardPage() {
       .sort((a, b) => b.nao_conforme - a.nao_conforme)
       .slice(0, 6);
 
-    // Aderência: registros esperados = imas ativos * 3 turnos * dias úteis 6x1
-    const diasUteis = diasUteis6x1(desde, new Date());
-    const esperados = (imasCount ?? 0) * 3 * diasUteis;
-    const aderencia = esperados > 0 ? Math.min(100, Math.round((total / esperados) * 100)) : 0;
+    // Aderência 6x1 (seg a sáb): ímãs por turno = 3 limpezas/dia; ímãs comerciais = 1/dia.
+    // Esperados e realizados vêm da mesma regra da tela de Pendências.
+    const diasUteis = diasUteis6x1(desde, ate < agora ? ate : agora);
+    const { pendencias, esperadosPorSlot, esperados } = calcularPendencias(
+      imasAtivos ?? [],
+      registrosBusca ?? [],
+      desde,
+      ate,
+      agora,
+    );
+    const realizados = esperados - pendencias.length;
+    const aderencia = esperados > 0 ? Math.round((realizados / esperados) * 100) : 0;
 
-    const aderenciaPorTurno: {
-      turno: Turno;
-      aderencia: number;
-      realizados: number;
-      esperados: number;
-    }[] = (["A", "B", "C"] as Turno[]).map((t) => {
-      const esp = (imasCount ?? 0) * diasUteis;
-      const real = turnos[t].total;
-      return {
-        turno: t,
-        realizados: real,
-        esperados: esp,
-        aderencia: esp > 0 ? Math.min(100, Math.round((real / esp) * 100)) : 0,
-      };
+    const pct = (real: number, esp: number) => (esp > 0 ? Math.round((real / esp) * 100) : 0);
+    const temComercial = esperadosPorSlot.D > 0;
+    const aderenciaPorSlot = [...TURNOS, ...(temComercial ? (["D"] as const) : [])].map((s) => {
+      const esp = esperadosPorSlot[s];
+      const real = esp - pendencias.filter((p) => p.slot === s).length;
+      return { slot: s, realizados: real, esperados: esp, aderencia: pct(real, esp) };
     });
+    const aderenciaPorTurno = aderenciaPorSlot
+      .filter((a): a is typeof a & { slot: Turno } => a.slot !== "D")
+      .map((a) => ({ ...a, turno: a.slot }));
 
     return {
       total,
@@ -140,10 +141,13 @@ function DashboardPage() {
       topNaoConformes,
       aderencia,
       aderenciaPorTurno,
+      aderenciaPorSlot,
       diasUteis,
       esperados,
+      realizados,
     };
-  }, [registros, imasCount, desde]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registros, registrosBusca, imasAtivos, resolvido]);
 
   const rankingTurnos = useMemo(() => {
     return (["A", "B", "C"] as Turno[])
@@ -164,8 +168,8 @@ function DashboardPage() {
     setExportando(true);
     try {
       await exportDashboardPdf({
-        periodoTitulo: periodoInfo[periodo].titulo,
-        periodoArquivo: periodoInfo[periodo].arquivo,
+        periodoTitulo: resolvido.titulo,
+        periodoArquivo: resolvido.arquivo,
         diasUteis: stats.diasUteis,
         stats: {
           total: stats.total,
@@ -175,6 +179,7 @@ function DashboardPage() {
           pctConforme: stats.pctConforme,
           aderencia: stats.aderencia,
           esperados: stats.esperados,
+          realizados: stats.realizados,
           porSetor: stats.porSetor,
           topNaoConformes: stats.topNaoConformes,
         },
@@ -216,20 +221,11 @@ function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Visão geral da limpeza de ímãs — {stats.diasUteis} dias úteis no período
+            Visão geral da limpeza de ímãs — {resolvido.titulo} · {stats.diasUteis} dias úteis
           </p>
         </div>
-        <div className="flex gap-2">
-          <Select value={periodo} onValueChange={(v) => setPeriodo(v as Periodo)}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">Últimos 7 dias</SelectItem>
-              <SelectItem value="30d">Últimos 30 dias</SelectItem>
-              <SelectItem value="90d">Últimos 90 dias</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <PeriodoFilter value={periodo} onChange={setPeriodo} />
           <Button variant="outline" onClick={handleExportPdf} disabled={exportando}>
             <FileDown className="mr-2 h-4 w-4" />
             {exportando ? "Exportando..." : "Exportar PDF"}
@@ -263,7 +259,7 @@ function DashboardPage() {
           title="Aderência 6x1"
           value={`${stats.aderencia}%`}
           icon={<TrendingUp className="h-4 w-4" />}
-          hint={`${stats.total} / ${stats.esperados} previstos`}
+          hint={`${stats.realizados} / ${stats.esperados} limpezas previstas`}
           accent={
             stats.aderencia >= 90 ? "success" : stats.aderencia >= 70 ? undefined : "destructive"
           }
@@ -301,13 +297,13 @@ function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Aderência por turno</CardTitle>
-            <CardDescription>Registros realizados vs. esperados na escala 6x1</CardDescription>
+            <CardDescription>Limpezas realizadas vs. esperadas na escala 6x1</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart
-                data={stats.aderenciaPorTurno.map((a) => ({
-                  turno: `Turno ${a.turno}`,
+                data={stats.aderenciaPorSlot.map((a) => ({
+                  turno: slotLabel(a.slot),
                   Aderência: a.aderencia,
                 }))}
               >

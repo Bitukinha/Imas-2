@@ -67,3 +67,14 @@ export function diaKey(date: Date): string {
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * Dia operacional: o turno C começa às 22:40 e termina às 06:00 do dia seguinte, então
+ * tudo que acontece entre 00:00 e 06:00 pertence ao dia anterior (dia em que o turno C começou).
+ */
+export function diaOperacional(date: Date): Date {
+  const d = new Date(date);
+  if (d.getHours() < 6) d.setDate(d.getDate() - 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}

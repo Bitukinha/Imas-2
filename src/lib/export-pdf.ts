@@ -19,7 +19,9 @@ type RegistroDetalhe = RegistroRow & {
   fotoLimpoId: string | null;
 };
 
-export async function exportRegistrosPdf(registros: RegistroRow[]) {
+export type PeriodoPdf = { titulo: string; arquivo: string };
+
+export async function exportRegistrosPdf(registros: RegistroRow[], periodo?: PeriodoPdf) {
   const [{ jsPDF }, { autoTable }] = await Promise.all([
     import("jspdf"),
     import("jspdf-autotable"),
@@ -30,7 +32,17 @@ export async function exportRegistrosPdf(registros: RegistroRow[]) {
   doc.setFontSize(14);
   doc.text("Registros de limpeza de ímãs — Nutrimilho", 14, 15);
   doc.setFontSize(10);
-  doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")}`, 14, 21);
+  doc.text(
+    [
+      periodo ? `Período: ${periodo.titulo}` : null,
+      `${registros.length} registros`,
+      `Gerado em ${new Date().toLocaleString("pt-BR")}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    14,
+    21,
+  );
 
   autoTable(doc, {
     startY: 26,
@@ -60,7 +72,7 @@ export async function exportRegistrosPdf(registros: RegistroRow[]) {
     headStyles: { fillColor: [46, 125, 70] },
   });
 
-  doc.save(`registros-limpeza-${new Date().toISOString().slice(0, 10)}.pdf`);
+  doc.save(`registros-limpeza-${periodo?.arquivo ?? new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 async function buildRegistroDetalhePdf(detalhe: RegistroDetalhe) {
@@ -168,6 +180,7 @@ function nomeArquivoRegistro(detalhe: RegistroDetalhe) {
 export async function exportRegistrosDetalhadosZip(
   registros: RegistroDetalhe[],
   onProgress?: (feito: number, total: number) => void,
+  periodo?: PeriodoPdf,
 ) {
   const [{ default: JSZip }] = await Promise.all([import("jszip")]);
   const zip = new JSZip();
@@ -183,7 +196,7 @@ export async function exportRegistrosDetalhadosZip(
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `registros-limpeza-${new Date().toISOString().slice(0, 10)}.zip`;
+  a.download = `registros-limpeza-${periodo?.arquivo ?? new Date().toISOString().slice(0, 10)}.zip`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -204,6 +217,7 @@ type DashboardExportData = {
     pctConforme: number;
     aderencia: number;
     esperados: number;
+    realizados: number;
     porSetor: { nome: string; conforme: number; nao_conforme: number }[];
     topNaoConformes: { codigo: string; nao_conforme: number }[];
   };
@@ -249,7 +263,7 @@ export async function exportDashboardPdf(data: DashboardExportData) {
   doc.text("Dashboard de limpeza de ímãs — Nutrimilho", marginX, 40);
   doc.setFontSize(10);
   doc.text(
-    `${data.periodoTitulo} · ${data.diasUteis} dias úteis · Gerado em ${new Date().toLocaleString("pt-BR")}`,
+    `Período: ${data.periodoTitulo} · ${data.diasUteis} dias úteis · Gerado em ${new Date().toLocaleString("pt-BR")}`,
     marginX,
     56,
   );
@@ -262,10 +276,10 @@ export async function exportDashboardPdf(data: DashboardExportData) {
     head: [["Total de registros", "Conformidade", "Não conformidades", "Aderência 6x1"]],
     body: [
       [
-        `${data.stats.total} (esperado ${data.stats.esperados})`,
+        `${data.stats.total}`,
         `${data.stats.pctConforme}% (${data.stats.conformes} conforme / ${data.stats.naoConformes} não conforme)`,
         `${data.stats.naoConformes} (${data.stats.acoes} ações corretivas)`,
-        `${data.stats.aderencia}%`,
+        `${data.stats.aderencia}% (${data.stats.realizados} de ${data.stats.esperados} limpezas)`,
       ],
     ],
     styles: { fontSize: 9 },
@@ -348,4 +362,93 @@ export async function exportDashboardPdf(data: DashboardExportData) {
   }
 
   doc.save(`dashboard-${data.periodoArquivo}-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+type PendenciasExportData = {
+  periodoTitulo: string;
+  periodoArquivo: string;
+  filtroTitulo: string;
+  slots: ("A" | "B" | "C" | "D")[];
+  porIma: {
+    imaCodigo: string;
+    setorNome: string;
+    total: number;
+    porSlot: Record<"A" | "B" | "C" | "D", number>;
+  }[];
+  pendencias: {
+    dia: Date;
+    slot: "A" | "B" | "C" | "D";
+    imaCodigo: string;
+    setorNome: string;
+    atrasado: boolean;
+  }[];
+};
+
+export async function exportPendenciasPdf(data: PendenciasExportData) {
+  const [{ jsPDF }, { autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
+  const { slotLabel } = await import("@/lib/pendencias");
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+  const marginX = 40;
+  const tableMargin = { left: marginX, right: marginX };
+  const headStyles = { fillColor: [46, 125, 70] as [number, number, number] };
+
+  doc.setFontSize(16);
+  doc.text("Pendências de limpeza de ímãs — Nutrimilho", marginX, 40);
+  doc.setFontSize(10);
+  doc.text(
+    `Período: ${data.periodoTitulo} · ${data.filtroTitulo} · ${data.pendencias.length} pendências · Gerado em ${new Date().toLocaleString("pt-BR")}`,
+    marginX,
+    56,
+    { maxWidth: 515 },
+  );
+
+  if (data.pendencias.length === 0) {
+    doc.setFontSize(11);
+    doc.text("Nenhuma pendência no período selecionado.", marginX, 90);
+  } else {
+    doc.setFontSize(11);
+    doc.text("Resumo por ímã", marginX, 84);
+    autoTable(doc, {
+      startY: 92,
+      head: [["Ímã", "Setor", ...data.slots.map(slotLabel), "Total"]],
+      body: data.porIma.map((i) => [
+        i.imaCodigo,
+        i.setorNome,
+        ...data.slots.map((s) => (i.porSlot[s] > 0 ? String(i.porSlot[s]) : "—")),
+        String(i.total),
+      ]),
+      styles: { fontSize: 9 },
+      headStyles,
+      margin: tableMargin,
+    });
+    let y = ensureSpace(doc, tableFinalY(doc, 120) + 24, 120);
+    doc.setFontSize(11);
+    doc.text("Detalhe por dia", marginX, y);
+    y += 8;
+    autoTable(doc, {
+      startY: y,
+      head: [["Dia", "Turno", "Ímã", "Setor", "Situação"]],
+      body: data.pendencias.map((p) => [
+        p.dia.toLocaleDateString("pt-BR", {
+          weekday: "short",
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        }),
+        slotLabel(p.slot),
+        p.imaCodigo,
+        p.setorNome,
+        p.atrasado ? "Atrasada" : "Em andamento",
+      ]),
+      styles: { fontSize: 9 },
+      headStyles,
+      margin: tableMargin,
+    });
+  }
+
+  doc.save(`pendencias-${data.periodoArquivo}.pdf`);
 }

@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { listRegistrosDesde } from "@/server/registros";
+import { toast } from "sonner";
+import { listRegistrosPeriodo } from "@/server/registros";
 import { listImasAtivos } from "@/server/imas";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -28,45 +30,45 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, CalendarClock, Magnet, ListChecks } from "lucide-react";
-import { diasUteis6x1Lista, diaKey, turnoAtual, TURNOS, type Turno } from "@/lib/turno";
+import { AlertTriangle, CalendarClock, FileDown, Magnet, ListChecks } from "lucide-react";
+import { PeriodoFilter } from "@/components/PeriodoFilter";
+import { periodoInicial, resolverPeriodo, type Periodo } from "@/lib/periodo";
+import {
+  calcularPendencias,
+  fimBuscaRegistros,
+  SLOTS,
+  slotLabel,
+  useAgora,
+  type PendenciaItem,
+  type Slot,
+} from "@/lib/pendencias";
+import { diaKey } from "@/lib/turno";
+import { exportPendenciasPdf } from "@/lib/export-pdf";
 
 export const Route = createFileRoute("/_authenticated/pendencias")({
   component: PendenciasPage,
 });
 
-type Periodo = "7d" | "30d" | "90d";
-
-const periodoInfo: Record<Periodo, string> = {
-  "7d": "Últimos 7 dias",
-  "30d": "Últimos 30 dias",
-  "90d": "Últimos 90 dias",
-};
-
-type PendenciaItem = {
-  diaKey: string;
-  dia: Date;
-  turno: Turno;
-  imaId: string;
-  imaCodigo: string;
-  setorNome: string;
-};
-
 function formatDia(dia: Date) {
   return dia.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
 }
 
-function PendenciasPage() {
-  const [periodo, setPeriodo] = useState<Periodo>("7d");
-  const [filtroTurno, setFiltroTurno] = useState<"all" | Turno>("all");
+const vazioPorSlot = (): Record<Slot, number> => ({ A: 0, B: 0, C: 0, D: 0 });
 
-  const desde = useMemo(() => {
-    const dias = periodo === "7d" ? 7 : periodo === "30d" ? 30 : 90;
-    const d = new Date();
-    d.setDate(d.getDate() - (dias - 1));
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, [periodo]);
+function PendenciasPage() {
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial("7d"));
+  const [filtroSlot, setFiltroSlot] = useState<"all" | Slot>("all");
+  const [exportando, setExportando] = useState(false);
+  const agora = useAgora();
+  const hojeKey = diaKey(agora);
+
+  // Recalcula quando muda o dia, para "Hoje"/"Últimos N dias" acompanharem a data atual.
+  const resolvido = useMemo(
+    () => resolverPeriodo(periodo, agora),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [periodo, hojeKey],
+  );
+  const inicio = resolvido.inicio ?? new Date(0);
 
   const { data: imasAtivos, isLoading: loadingImas } = useQuery({
     queryKey: ["imas-ativos"],
@@ -74,81 +76,54 @@ function PendenciasPage() {
   });
 
   const { data: registros, isLoading: loadingRegistros } = useQuery({
-    queryKey: ["pendencias-registros", periodo],
-    queryFn: () => listRegistrosDesde({ data: { desde: desde.toISOString() } }),
+    queryKey: ["pendencias-registros", inicio.toISOString(), resolvido.fim.toISOString()],
+    queryFn: () =>
+      listRegistrosPeriodo({
+        data: { de: inicio.toISOString(), ate: fimBuscaRegistros(resolvido.fim).toISOString() },
+      }),
   });
 
   const isLoading = loadingImas || loadingRegistros;
+  const temDiarios = imasAtivos?.some((i) => i.frequencia === "diaria") ?? false;
+  const slotsVisiveis = SLOTS.filter((s) => s !== "D" || temDiarios);
 
   const pendencias = useMemo<PendenciaItem[]>(() => {
     if (!imasAtivos || !registros) return [];
-
-    // Ímãs são identificados pelo código (único) — os registros não trazem o id do ímã.
-    const feitos = new Set(
-      registros.map((r) => `${r.imaCodigo}|${r.turno}|${diaKey(new Date(r.dataHora))}`),
-    );
-
-    const hoje = new Date();
-    const hojeKey = diaKey(hoje);
-    const turnoAtualIdx = TURNOS.indexOf(turnoAtual(hoje));
-
-    const lista: PendenciaItem[] = [];
-    for (const dia of diasUteis6x1Lista(desde, hoje)) {
-      const dKey = diaKey(dia);
-      const isHoje = dKey === hojeKey;
-      for (const turno of TURNOS) {
-        // Turnos de hoje que ainda não começaram não são pendência.
-        if (isHoje && TURNOS.indexOf(turno) > turnoAtualIdx) continue;
-        for (const ima of imasAtivos) {
-          if (!feitos.has(`${ima.codigo}|${turno}|${dKey}`)) {
-            lista.push({
-              diaKey: dKey,
-              dia,
-              turno,
-              imaId: ima.id,
-              imaCodigo: ima.codigo,
-              setorNome: ima.setorNome ?? "—",
-            });
-          }
-        }
-      }
-    }
-    return lista;
-  }, [imasAtivos, registros, desde]);
+    return calcularPendencias(imasAtivos, registros, inicio, resolvido.fim, agora).pendencias;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imasAtivos, registros, resolvido]);
 
   const pendenciasFiltradas = useMemo(
-    () => (filtroTurno === "all" ? pendencias : pendencias.filter((p) => p.turno === filtroTurno)),
-    [pendencias, filtroTurno],
+    () => (filtroSlot === "all" ? pendencias : pendencias.filter((p) => p.slot === filtroSlot)),
+    [pendencias, filtroSlot],
   );
 
   const porIma = useMemo(() => {
     const map = new Map<
       string,
-      { imaCodigo: string; setorNome: string; total: number; porTurno: Record<Turno, number> }
+      { imaCodigo: string; setorNome: string; total: number; porSlot: Record<Slot, number> }
     >();
     pendenciasFiltradas.forEach((p) => {
       const cur = map.get(p.imaId) ?? {
         imaCodigo: p.imaCodigo,
         setorNome: p.setorNome,
         total: 0,
-        porTurno: { A: 0, B: 0, C: 0 },
+        porSlot: vazioPorSlot(),
       };
       cur.total++;
-      cur.porTurno[p.turno]++;
+      cur.porSlot[p.slot]++;
       map.set(p.imaId, cur);
     });
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [pendenciasFiltradas]);
 
-  const porTurno = useMemo(() => {
-    const map: Record<Turno, { total: number; imas: Set<string> }> = {
-      A: { total: 0, imas: new Set() },
-      B: { total: 0, imas: new Set() },
-      C: { total: 0, imas: new Set() },
-    };
+  const porSlot = useMemo(() => {
+    const map = Object.fromEntries(
+      SLOTS.map((s) => [s, { total: 0, imas: new Set<string>() }]),
+    ) as Record<Slot, { total: number; imas: Set<string> }>;
     pendenciasFiltradas.forEach((p) => {
-      map[p.turno].total++;
-      map[p.turno].imas.add(p.imaCodigo);
+      map[p.slot].total++;
+      map[p.slot].imas.add(p.imaCodigo);
     });
     return map;
   }, [pendenciasFiltradas]);
@@ -156,16 +131,16 @@ function PendenciasPage() {
   const porDia = useMemo(() => {
     const map = new Map<
       string,
-      { dia: Date; total: number; porTurno: Record<Turno, PendenciaItem[]> }
+      { dia: Date; total: number; porSlot: Record<Slot, PendenciaItem[]> }
     >();
     pendenciasFiltradas.forEach((p) => {
       const cur = map.get(p.diaKey) ?? {
         dia: p.dia,
         total: 0,
-        porTurno: { A: [], B: [], C: [] },
+        porSlot: { A: [], B: [], C: [], D: [] },
       };
       cur.total++;
-      cur.porTurno[p.turno].push(p);
+      cur.porSlot[p.slot].push(p);
       map.set(p.diaKey, cur);
     });
     return Array.from(map.entries())
@@ -173,9 +148,31 @@ function PendenciasPage() {
       .map(([key, v]) => ({ key, ...v }));
   }, [pendenciasFiltradas]);
 
-  const piorTurno = useMemo(() => {
-    return TURNOS.reduce((pior, t) => (porTurno[t].total > porTurno[pior].total ? t : pior), "A" as Turno);
-  }, [porTurno]);
+  const piorSlot = useMemo(
+    () => slotsVisiveis.reduce((pior, s) => (porSlot[s].total > porSlot[pior].total ? s : pior)),
+    [porSlot, slotsVisiveis],
+  );
+  const piorDia = porDia.length > 0 ? [...porDia].sort((a, b) => b.total - a.total)[0] : null;
+
+  const handleExportPdf = async () => {
+    setExportando(true);
+    try {
+      await exportPendenciasPdf({
+        periodoTitulo: resolvido.titulo,
+        periodoArquivo: resolvido.arquivo,
+        filtroTitulo: filtroSlot === "all" ? "Todos os turnos" : slotLabel(filtroSlot),
+        slots: slotsVisiveis,
+        porIma,
+        pendencias: [...pendenciasFiltradas].sort(
+          (a, b) => b.diaKey.localeCompare(a.diaKey) || a.slot.localeCompare(b.slot),
+        ),
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao exportar PDF");
+    } finally {
+      setExportando(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -199,28 +196,25 @@ function PendenciasPage() {
             Limpezas ainda não registradas, por ímã, turno e dia
           </p>
         </div>
-        <div className="flex gap-2">
-          <Select value={filtroTurno} onValueChange={(v) => setFiltroTurno(v as "all" | Turno)}>
-            <SelectTrigger className="w-40">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <Select value={filtroSlot} onValueChange={(v) => setFiltroSlot(v as "all" | Slot)}>
+            <SelectTrigger className="w-full sm:w-40">
               <SelectValue placeholder="Turno" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os turnos</SelectItem>
-              <SelectItem value="A">Turno A</SelectItem>
-              <SelectItem value="B">Turno B</SelectItem>
-              <SelectItem value="C">Turno C</SelectItem>
+              {slotsVisiveis.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {slotLabel(s)}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
-          <Select value={periodo} onValueChange={(v) => setPeriodo(v as Periodo)}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">Últimos 7 dias</SelectItem>
-              <SelectItem value="30d">Últimos 30 dias</SelectItem>
-              <SelectItem value="90d">Últimos 90 dias</SelectItem>
-            </SelectContent>
-          </Select>
+          <PeriodoFilter value={periodo} onChange={setPeriodo} />
+          <Button variant="outline" onClick={handleExportPdf} disabled={exportando}>
+            <FileDown className="mr-2 h-4 w-4" />
+            {exportando ? "Exportando..." : "Exportar PDF"}
+          </Button>
         </div>
       </div>
 
@@ -230,7 +224,7 @@ function PendenciasPage() {
           title="Pendências no período"
           value={pendenciasFiltradas.length}
           icon={<AlertTriangle className="h-4 w-4 text-destructive" />}
-          hint={periodoInfo[periodo]}
+          hint={resolvido.titulo}
           accent={pendenciasFiltradas.length > 0 ? "destructive" : undefined}
         />
         <KpiCard
@@ -241,21 +235,19 @@ function PendenciasPage() {
         />
         <KpiCard
           title="Turno mais crítico"
-          value={pendenciasFiltradas.length > 0 ? `Turno ${piorTurno}` : "—"}
+          value={pendenciasFiltradas.length > 0 ? slotLabel(piorSlot) : "—"}
           icon={<ListChecks className="h-4 w-4" />}
           hint={
-            pendenciasFiltradas.length > 0 ? `${porTurno[piorTurno].total} pendências` : "Sem pendências"
+            pendenciasFiltradas.length > 0
+              ? `${porSlot[piorSlot].total} pendências`
+              : "Sem pendências"
           }
         />
         <KpiCard
           title="Dia com mais pendências"
-          value={porDia.length > 0 ? formatDia([...porDia].sort((a, b) => b.total - a.total)[0].dia) : "—"}
+          value={piorDia ? formatDia(piorDia.dia) : "—"}
           icon={<CalendarClock className="h-4 w-4" />}
-          hint={
-            porDia.length > 0
-              ? `${[...porDia].sort((a, b) => b.total - a.total)[0].total} pendências`
-              : "Sem pendências"
-          }
+          hint={piorDia ? `${piorDia.total} pendências` : "Sem pendências"}
         />
       </div>
 
@@ -289,10 +281,10 @@ function PendenciasPage() {
                           <Badge variant="destructive">{i.total}</Badge>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1">
-                          {TURNOS.map((t) =>
-                            i.porTurno[t] > 0 ? (
-                              <Badge key={t} variant="outline">
-                                Turno {t}: {i.porTurno[t]}
+                          {slotsVisiveis.map((s) =>
+                            i.porSlot[s] > 0 ? (
+                              <Badge key={s} variant="outline">
+                                {slotLabel(s)}: {i.porSlot[s]}
                               </Badge>
                             ) : null,
                           )}
@@ -305,9 +297,9 @@ function PendenciasPage() {
                       <TableRow>
                         <TableHead>Ímã</TableHead>
                         <TableHead>Setor</TableHead>
-                        <TableHead>Turno A</TableHead>
-                        <TableHead>Turno B</TableHead>
-                        <TableHead>Turno C</TableHead>
+                        {slotsVisiveis.map((s) => (
+                          <TableHead key={s}>{slotLabel(s)}</TableHead>
+                        ))}
                         <TableHead className="text-right">Total</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -316,10 +308,10 @@ function PendenciasPage() {
                         <TableRow key={i.imaCodigo}>
                           <TableCell className="font-medium">{i.imaCodigo}</TableCell>
                           <TableCell>{i.setorNome}</TableCell>
-                          {TURNOS.map((t) => (
-                            <TableCell key={t}>
-                              {i.porTurno[t] > 0 ? (
-                                <Badge variant="destructive">{i.porTurno[t]}</Badge>
+                          {slotsVisiveis.map((s) => (
+                            <TableCell key={s}>
+                              {i.porSlot[s] > 0 ? (
+                                <Badge variant="destructive">{i.porSlot[s]}</Badge>
                               ) : (
                                 <span className="text-muted-foreground">—</span>
                               )}
@@ -338,28 +330,33 @@ function PendenciasPage() {
 
         {/* POR TURNO */}
         <TabsContent value="turno">
-          <div className="grid gap-4 md:grid-cols-3">
-            {TURNOS.map((t) => (
-              <Card key={t}>
+          <div
+            className={`grid gap-4 ${slotsVisiveis.length === 4 ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3"}`}
+          >
+            {slotsVisiveis.map((s) => (
+              <Card key={s}>
                 <CardHeader>
-                  <CardTitle>Turno {t}</CardTitle>
-                  <CardDescription>{porTurno[t].total} pendências no período</CardDescription>
+                  <CardTitle>{slotLabel(s)}</CardTitle>
+                  <CardDescription>
+                    {porSlot[s].total} pendências no período
+                    {s === "D" && " · 1 limpeza por dia, seg a sáb"}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {porTurno[t].total === 0 ? (
+                  {porSlot[s].total === 0 ? (
                     <p className="text-sm text-muted-foreground">Sem pendências.</p>
                   ) : (
                     <div className="space-y-2">
                       <div className="text-xs text-muted-foreground">
-                        {porTurno[t].imas.size} ímã(s) afetado(s)
+                        {porSlot[s].imas.size} ímã(s) afetado(s)
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {porIma
-                          .filter((i) => i.porTurno[t] > 0)
+                          .filter((i) => i.porSlot[s] > 0)
                           .slice(0, 12)
                           .map((i) => (
                             <Badge key={i.imaCodigo} variant="outline">
-                              {i.imaCodigo} ({i.porTurno[t]})
+                              {i.imaCodigo} ({i.porSlot[s]})
                             </Badge>
                           ))}
                       </div>
@@ -376,7 +373,9 @@ function PendenciasPage() {
           <Card>
             <CardHeader>
               <CardTitle>Pendências por dia</CardTitle>
-              <CardDescription>Dias úteis (segunda a sábado) com limpezas em aberto</CardDescription>
+              <CardDescription>
+                Dias úteis (segunda a sábado) com limpezas em aberto
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {porDia.length === 0 ? (
@@ -392,19 +391,21 @@ function PendenciasPage() {
                         </div>
                       </AccordionTrigger>
                       <AccordionContent>
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          {TURNOS.map((t) => (
-                            <div key={t}>
+                        <div
+                          className={`grid gap-3 ${slotsVisiveis.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}
+                        >
+                          {slotsVisiveis.map((s) => (
+                            <div key={s}>
                               <div className="mb-1 text-xs font-medium text-muted-foreground">
-                                Turno {t} ({d.porTurno[t].length})
+                                {slotLabel(s)} ({d.porSlot[s].length})
                               </div>
-                              {d.porTurno[t].length === 0 ? (
+                              {d.porSlot[s].length === 0 ? (
                                 <span className="text-xs text-muted-foreground">
                                   Sem pendências
                                 </span>
                               ) : (
                                 <div className="flex flex-wrap gap-1">
-                                  {d.porTurno[t].map((p) => (
+                                  {d.porSlot[s].map((p) => (
                                     <Badge key={p.imaId} variant="outline">
                                       {p.imaCodigo}
                                     </Badge>
