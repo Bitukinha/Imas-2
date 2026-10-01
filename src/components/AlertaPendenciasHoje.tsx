@@ -22,11 +22,12 @@ import { diaKey, diaOperacional, turnoAtual } from "@/lib/turno";
 const DISPENSADO_KEY = "alerta-pendencias-dispensado";
 
 /**
- * Pendências do dia operacional corrente (06:00 até 06:00 do dia seguinte, fim do turno C).
- * A chave da query inclui o dia, então quando vira o dia o alerta é recalculado do zero
- * (e volta a aparecer, mesmo se tiver sido dispensado no dia anterior).
+ * Pendências do turno em andamento, de acordo com a hora: no turno C mostra só o turno C, etc.
+ * Ímãs de horário comercial aparecem só enquanto a janela 08:00–17:00 está aberta.
+ * A chave da query inclui o dia operacional (06:00 até 06:00 do dia seguinte), então quando
+ * vira o dia o alerta é recalculado do zero.
  */
-function usePendenciasHoje() {
+function usePendenciasTurno() {
   const agora = useAgora();
   const hoje = diaOperacional(agora);
   const hojeKey = diaKey(hoje);
@@ -52,8 +53,10 @@ function usePendenciasHoje() {
 
   const pendencias = useMemo<PendenciaItem[]>(() => {
     if (!imas || !registros) return [];
-    return calcularPendencias(imas, registros, hoje, hoje, agora).pendencias;
-    // Recalcula a cada minuto: turnos começam/terminam e mudam o que é pendente ou atrasado.
+    return calcularPendencias(imas, registros, hoje, hoje, agora).pendencias.filter(
+      (p) => p.slot === turno || (p.slot === "D" && !p.atrasado),
+    );
+    // Recalcula a cada minuto: quando muda o turno, o alerta passa a mostrar o novo turno.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imas, registros, hojeKey, minutoKey]);
 
@@ -65,7 +68,8 @@ function usePendenciasHoje() {
 
   return {
     hoje,
-    hojeKey,
+    // Chave usada para dispensar o alerta: vale só para o turno atual.
+    turnoKey: `${hojeKey}|${turno}`,
     turno,
     pendencias,
     porSlot,
@@ -81,11 +85,6 @@ function ListaPendencias({ porSlot }: { porSlot: Record<Slot, PendenciaItem[]> }
         <div key={s}>
           <div className="mb-1 flex items-center gap-2 text-xs font-medium text-muted-foreground">
             {slotLabel(s)} ({porSlot[s].length})
-            {porSlot[s].some((p) => p.atrasado) ? (
-              <Badge variant="destructive">atrasado</Badge>
-            ) : (
-              <Badge variant="outline">em andamento</Badge>
-            )}
           </div>
           <div className="flex flex-wrap gap-1">
             {porSlot[s].map((p) => (
@@ -100,15 +99,20 @@ function ListaPendencias({ porSlot }: { porSlot: Record<Slot, PendenciaItem[]> }
   );
 }
 
-/** Sino no cabeçalho com o total de pendências de hoje. */
+/** Sino no cabeçalho com o total de pendências do turno atual. */
 export function AlertaPendenciasSino() {
-  const { hoje, pendencias, porSlot, turno, carregado, domingo } = usePendenciasHoje();
+  const { hoje, pendencias, porSlot, turno, carregado, domingo } = usePendenciasTurno();
   const total = pendencias.length;
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative" aria-label="Pendências de hoje">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label="Pendências do turno atual"
+        >
           <Bell className="h-5 w-5" />
           {total > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
@@ -119,14 +123,13 @@ export function AlertaPendenciasSino() {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80">
         <div className="mb-3">
-          <div className="font-medium">Pendências de hoje</div>
+          <div className="font-medium">Pendências do turno {turno}</div>
           <div className="text-xs text-muted-foreground capitalize">
             {hoje.toLocaleDateString("pt-BR", {
               weekday: "long",
               day: "2-digit",
               month: "2-digit",
-            })}{" "}
-            · Turno atual {turno}
+            })}
           </div>
         </div>
         {!carregado ? (
@@ -135,7 +138,7 @@ export function AlertaPendenciasSino() {
           <p className="text-sm text-muted-foreground">Domingo — sem limpezas previstas.</p>
         ) : total === 0 ? (
           <p className="flex items-center gap-2 text-sm text-success">
-            <CheckCircle2 className="h-4 w-4" /> Tudo em dia hoje.
+            <CheckCircle2 className="h-4 w-4" /> Tudo em dia neste turno.
           </p>
         ) : (
           <div className="max-h-80 overflow-y-auto">
@@ -151,11 +154,11 @@ export function AlertaPendenciasSino() {
 }
 
 /**
- * Faixa de alerta no topo das páginas. Pode ser dispensada, mas só pelo dia atual:
- * quando muda o dia aparece de novo com as pendências do novo dia.
+ * Faixa de alerta no topo das páginas. Pode ser dispensada, mas só pelo turno atual:
+ * quando muda o turno (ou o dia) aparece de novo com as pendências do novo turno.
  */
 export function AlertaPendenciasFaixa() {
-  const { hojeKey, pendencias, porSlot, carregado } = usePendenciasHoje();
+  const { turnoKey, turno, pendencias, porSlot, carregado } = usePendenciasTurno();
   const [dispensadoEm, setDispensadoEm] = useState<string | null>(null);
 
   useEffect(() => {
@@ -166,25 +169,22 @@ export function AlertaPendenciasFaixa() {
     }
   }, []);
 
-  if (!carregado || pendencias.length === 0 || dispensadoEm === hojeKey) return null;
+  if (!carregado || pendencias.length === 0 || dispensadoEm === turnoKey) return null;
 
   const dispensar = () => {
-    setDispensadoEm(hojeKey);
+    setDispensadoEm(turnoKey);
     try {
-      localStorage.setItem(DISPENSADO_KEY, hojeKey);
+      localStorage.setItem(DISPENSADO_KEY, turnoKey);
     } catch {
       // ignora
     }
   };
 
-  const atrasadas = pendencias.filter((p) => p.atrasado).length;
-
   return (
     <Alert variant="destructive" className="relative mb-4 pr-10">
       <AlertTriangle className="h-4 w-4" />
       <AlertTitle>
-        {pendencias.length} limpeza(s) pendente(s) hoje
-        {atrasadas > 0 && ` — ${atrasadas} atrasada(s)`}
+        {pendencias.length} limpeza(s) pendente(s) no turno {turno}
       </AlertTitle>
       <AlertDescription>
         <div className="mt-2 text-foreground">
@@ -195,8 +195,8 @@ export function AlertaPendenciasFaixa() {
         type="button"
         onClick={dispensar}
         className="absolute right-3 top-3 rounded p-1 text-muted-foreground hover:bg-muted"
-        aria-label="Dispensar alerta de hoje"
-        title="Dispensar até amanhã"
+        aria-label="Dispensar alerta deste turno"
+        title="Dispensar até o próximo turno"
       >
         <X className="h-4 w-4" />
       </button>
