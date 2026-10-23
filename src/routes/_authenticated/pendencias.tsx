@@ -44,6 +44,7 @@ import {
 } from "@/lib/pendencias";
 import { diaKey } from "@/lib/turno";
 import { exportPendenciasPdf } from "@/lib/export-pdf";
+import { listParadas } from "@/server/paradas";
 
 export const Route = createFileRoute("/_authenticated/pendencias")({
   component: PendenciasPage,
@@ -83,15 +84,21 @@ function PendenciasPage() {
       }),
   });
 
-  const isLoading = loadingImas || loadingRegistros;
+  const { data: paradas, isLoading: loadingParadas } = useQuery({
+    queryKey: ["dias-parados"],
+    queryFn: () => listParadas(),
+  });
+
+  const isLoading = loadingImas || loadingRegistros || loadingParadas;
   const temDiarios = imasAtivos?.some((i) => i.frequencia === "diaria") ?? false;
   const slotsVisiveis = SLOTS.filter((s) => s !== "D" || temDiarios);
 
   const pendencias = useMemo<PendenciaItem[]>(() => {
-    if (!imasAtivos || !registros) return [];
-    return calcularPendencias(imasAtivos, registros, inicio, resolvido.fim, agora).pendencias;
+    if (!imasAtivos || !registros || !paradas) return [];
+    return calcularPendencias(imasAtivos, registros, paradas, inicio, resolvido.fim, agora)
+      .pendencias;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imasAtivos, registros, resolvido]);
+  }, [imasAtivos, registros, paradas, resolvido]);
 
   const pendenciasFiltradas = useMemo(
     () => (filtroSlot === "all" ? pendencias : pendencias.filter((p) => p.slot === filtroSlot)),

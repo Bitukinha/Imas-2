@@ -23,10 +23,17 @@ import {
   Legend,
 } from "recharts";
 import { CheckCircle2, AlertTriangle, Activity, TrendingUp, FileDown } from "lucide-react";
-import { diaKey, diasUteis6x1, TURNOS, turnoLabel, type Turno } from "@/lib/turno";
+import { diaKey, diasUteis6x1Lista, TURNOS, turnoLabel, type Turno } from "@/lib/turno";
+import { listParadas } from "@/server/paradas";
 import { PeriodoFilter } from "@/components/PeriodoFilter";
 import { periodoInicial, resolverPeriodo, type Periodo } from "@/lib/periodo";
-import { calcularPendencias, fimBuscaRegistros, slotLabel, useAgora } from "@/lib/pendencias";
+import {
+  calcularPendencias,
+  diaTodoParado,
+  fimBuscaRegistros,
+  slotLabel,
+  useAgora,
+} from "@/lib/pendencias";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: DashboardPage,
@@ -62,6 +69,11 @@ function DashboardPage() {
   const { data: imasAtivos } = useQuery({
     queryKey: ["imas-ativos"],
     queryFn: () => listImasAtivos(),
+  });
+
+  const { data: paradas } = useQuery({
+    queryKey: ["dias-parados"],
+    queryFn: () => listParadas(),
   });
 
   const stats = useMemo(() => {
@@ -108,10 +120,15 @@ function DashboardPage() {
 
     // Aderência 6x1 (seg a sáb): ímãs por turno = 3 limpezas/dia; ímãs comerciais = 1/dia.
     // Esperados e realizados vêm da mesma regra da tela de Pendências.
-    const diasUteis = diasUteis6x1(desde, ate < agora ? ate : agora);
+    // Dias em que a fábrica toda parou não contam como dias úteis.
+    const fimDiasUteis = ate < agora ? ate : agora;
+    const diasUteis = diasUteis6x1Lista(desde, fimDiasUteis).filter(
+      (d) => !diaTodoParado(paradas ?? [], diaKey(d)),
+    ).length;
     const { pendencias, esperadosPorSlot, esperados } = calcularPendencias(
       imasAtivos ?? [],
       registrosBusca ?? [],
+      paradas ?? [],
       desde,
       ate,
       agora,
@@ -147,7 +164,7 @@ function DashboardPage() {
       realizados,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registros, registrosBusca, imasAtivos, resolvido]);
+  }, [registros, registrosBusca, imasAtivos, paradas, resolvido]);
 
   const rankingTurnos = useMemo(() => {
     return (["A", "B", "C"] as Turno[])

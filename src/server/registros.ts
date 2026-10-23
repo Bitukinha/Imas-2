@@ -39,6 +39,8 @@ function baseSelect() {
       dataHora: registrosLimpeza.dataHora,
       turno: registrosLimpeza.turno,
       imaId: registrosLimpeza.imaId,
+      responsavelId: registrosLimpeza.responsavelId,
+      monitorId: registrosLimpeza.monitorId,
       status: registrosLimpeza.status,
       acaoTomada: registrosLimpeza.acaoTomada,
       observacoes: registrosLimpeza.observacoes,
@@ -91,6 +93,38 @@ export const deleteRegistro = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
     await getDb().delete(registrosLimpeza).where(eq(registrosLimpeza.id, data.id));
+  });
+
+export const updateRegistro = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      id: z.string(),
+      dataHora: z.string(),
+      imaId: z.string(),
+      setorId: z.string(),
+      turno: turnoSchema,
+      responsavelId: z.string(),
+      monitorId: z.string().optional(),
+      status: statusSchema,
+      acaoTomada: z.string().optional(),
+      observacoes: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await getDb()
+      .update(registrosLimpeza)
+      .set({
+        dataHora: new Date(data.dataHora),
+        imaId: data.imaId,
+        setorId: data.setorId,
+        turno: data.turno,
+        responsavelId: data.responsavelId,
+        monitorId: data.monitorId || null,
+        status: data.status,
+        acaoTomada: data.acaoTomada || null,
+        observacoes: data.observacoes || null,
+      })
+      .where(eq(registrosLimpeza.id, data.id));
   });
 
 export const createRegistro = createServerFn({ method: "POST" })

@@ -26,11 +26,13 @@ import {
   FileDown,
   FolderDown,
   Trash2,
+  Pencil,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignedImage } from "@/components/SignedImage";
+import { EditarRegistroDialog } from "@/components/EditarRegistroDialog";
 import { deleteRegistro, listRegistros, listRegistrosParaExport } from "@/server/registros";
 import { listSetores } from "@/server/setores";
 import { PeriodoFilter } from "@/components/PeriodoFilter";
@@ -55,6 +57,7 @@ function RegistrosPage() {
   const [filtroSetor, setFiltroSetor] = useState<string>("all");
   const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial("tudo"));
   const [openId, setOpenId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [exportando, setExportando] = useState(false);
   const [baixandoZip, setBaixandoZip] = useState(false);
@@ -142,6 +145,7 @@ function RegistrosPage() {
   };
 
   const detalhe = registros.find((r) => r.id === openId) ?? null;
+  const editando = registros.find((r) => r.id === editId) ?? null;
 
   return (
     <div className="space-y-6">
@@ -244,7 +248,10 @@ function RegistrosPage() {
                         Responsável: {r.responsavelNome ?? "—"}
                       </div>
                     </button>
-                    <div className="mt-2 flex justify-end border-t pt-2">
+                    <div className="mt-2 flex justify-end gap-1 border-t pt-2">
+                      <Button size="sm" variant="ghost" onClick={() => setEditId(r.id)}>
+                        <Pencil className="mr-1 h-4 w-4" /> Editar
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -270,7 +277,7 @@ function RegistrosPage() {
                     <TableHead>Setor</TableHead>
                     <TableHead>Responsável</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="w-24" />
+                    <TableHead className="w-32" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -294,6 +301,14 @@ function RegistrosPage() {
                         <div className="flex items-center gap-1">
                           <Button size="icon" variant="ghost" onClick={() => setOpenId(r.id)}>
                             <ImageIcon className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title="Editar"
+                            onClick={() => setEditId(r.id)}
+                          >
+                            <Pencil className="h-4 w-4" />
                           </Button>
                           <Button
                             size="icon"
@@ -360,6 +375,16 @@ function RegistrosPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => {
+                      setEditId(detalhe.id);
+                      setOpenId(null);
+                    }}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" /> Editar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     className="text-destructive hover:text-destructive"
                     onClick={() => {
                       if (confirm("Excluir este registro?")) excluir.mutate(detalhe.id);
@@ -407,6 +432,8 @@ function RegistrosPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <EditarRegistroDialog registro={editando} onClose={() => setEditId(null)} />
     </div>
   );
 }

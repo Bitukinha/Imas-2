@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, uuid, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgEnum, pgTable, uuid, text, boolean, timestamp, date } from "drizzle-orm/pg-core";
 
 export const appRoleEnum = pgEnum("app_role", ["admin", "monitor", "operador"]);
 export const turnoEnum = pgEnum("turno_tipo", ["A", "B", "C"]);
@@ -63,5 +63,16 @@ export const registrosLimpeza = pgTable("registros_limpeza", {
   fotoLimpoId: uuid("foto_limpo_id").references(() => arquivos.id, { onDelete: "set null" }),
   acaoTomada: text("acao_tomada"),
   observacoes: text("observacoes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Dias (ou turnos) em que a fábrica/setor ficou parado: não há limpeza prevista, então
+// não geram pendências nem contam na aderência. setorId/turno nulos = todos.
+export const diasParados = pgTable("dias_parados", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  data: date("data", { mode: "string" }).notNull(),
+  setorId: uuid("setor_id").references(() => setores.id, { onDelete: "cascade" }),
+  turno: turnoEnum("turno"),
+  motivo: text("motivo"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

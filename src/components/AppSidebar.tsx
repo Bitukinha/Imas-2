@@ -6,6 +6,7 @@ import {
   Building2,
   Users,
   ListChecks,
+  CalendarOff,
 } from "lucide-react";
 import {
   Sidebar,
@@ -24,6 +25,7 @@ const items = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Registros", url: "/registros", icon: ClipboardList },
   { title: "Pendências", url: "/pendencias", icon: ListChecks },
+  { title: "Dias parados", url: "/dias-parados", icon: CalendarOff },
   { title: "Ímãs", url: "/imas", icon: Magnet },
   { title: "Setores", url: "/setores", icon: Building2 },
   { title: "Usuários", url: "/usuarios", icon: Users },

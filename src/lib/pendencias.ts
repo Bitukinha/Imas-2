@@ -29,11 +29,39 @@ function emMinutos(dia: Date, minutos: number) {
 export type ImaRef = {
   id: string;
   codigo: string;
+  setorId: string;
   setorNome: string | null;
   frequencia: "turno" | "diaria";
 };
 
 type RegistroRef = { imaId: string; turno: string; dataHora: string | Date };
+
+/** Dia parado (AAAA-MM-DD). setorId/turno nulos = vale para todos os setores/turnos. */
+export type ParadaRef = { data: string; setorId: string | null; turno: string | null };
+
+/**
+ * Indica se o slot do ímã nesse dia está dentro de uma parada (sem limpeza prevista).
+ * O horário comercial (D) cruza os turnos A e B, então só é dispensado por parada do dia todo.
+ */
+function criarVerificadorParadas(paradas: ParadaRef[]) {
+  const porDia = new Map<string, ParadaRef[]>();
+  for (const p of paradas) {
+    const lista = porDia.get(p.data) ?? [];
+    lista.push(p);
+    porDia.set(p.data, lista);
+  }
+  return (dKey: string, setorId: string, slot: Slot) =>
+    (porDia.get(dKey) ?? []).some(
+      (p) =>
+        (p.setorId === null || p.setorId === setorId) &&
+        (p.turno === null || (slot !== "D" && p.turno === slot)),
+    );
+}
+
+/** Dia inteiro parado para todos os setores — não conta como dia útil. */
+export function diaTodoParado(paradas: ParadaRef[], dKey: string) {
+  return paradas.some((p) => p.data === dKey && p.setorId === null && p.turno === null);
+}
 
 export type PendenciaItem = {
   diaKey: string;
@@ -58,10 +86,12 @@ export type ResultadoPendencias = {
  * (escala 6x1, segunda a sábado — folga aos domingos).
  * - Ímã "turno": 1 limpeza por turno (A, B, C); só conta depois que o turno começou.
  * - Ímã "diaria" (comercial): 1 limpeza por dia em qualquer horário; só conta a partir das 08:00.
+ * - Dias/turnos parados (`paradas`) não têm limpeza prevista.
  */
 export function calcularPendencias(
   imas: ImaRef[],
   registros: RegistroRef[],
+  paradas: ParadaRef[],
   inicio: Date,
   fim: Date,
   agora = new Date(),
@@ -75,6 +105,7 @@ export function calcularPendencias(
   }
 
   const limite = fim < agora ? fim : agora;
+  const parado = criarVerificadorParadas(paradas);
 
   const esperadosPorSlot: Record<Slot, number> = { A: 0, B: 0, C: 0, D: 0 };
   const pendencias: PendenciaItem[] = [];
@@ -86,6 +117,7 @@ export function calcularPendencias(
       for (const slot of slots) {
         const [ini, fimJanela] = JANELAS[slot];
         if (agora < emMinutos(dia, ini)) continue; // ainda não começou
+        if (parado(dKey, ima.setorId, slot)) continue;
         esperadosPorSlot[slot]++;
         const feito =
           slot === "D"

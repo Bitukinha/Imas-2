@@ -8,8 +8,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { listImasAtivos } from "@/server/imas";
 import { listRegistrosPeriodo } from "@/server/registros";
+import { listParadas } from "@/server/paradas";
 import {
   calcularPendencias,
+  diaTodoParado,
   fimBuscaRegistros,
   SLOTS,
   slotLabel,
@@ -51,14 +53,19 @@ function usePendenciasTurno() {
     refetchInterval: 2 * 60_000,
   });
 
+  const { data: paradas } = useQuery({
+    queryKey: ["dias-parados"],
+    queryFn: () => listParadas(),
+  });
+
   const pendencias = useMemo<PendenciaItem[]>(() => {
-    if (!imas || !registros) return [];
-    return calcularPendencias(imas, registros, hoje, hoje, agora).pendencias.filter(
+    if (!imas || !registros || !paradas) return [];
+    return calcularPendencias(imas, registros, paradas, hoje, hoje, agora).pendencias.filter(
       (p) => p.slot === turno || (p.slot === "D" && !p.atrasado),
     );
     // Recalcula a cada minuto: quando muda o turno, o alerta passa a mostrar o novo turno.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imas, registros, hojeKey, minutoKey]);
+  }, [imas, registros, paradas, hojeKey, minutoKey]);
 
   const porSlot = useMemo(() => {
     const map: Record<Slot, PendenciaItem[]> = { A: [], B: [], C: [], D: [] };
@@ -73,8 +80,9 @@ function usePendenciasTurno() {
     turno,
     pendencias,
     porSlot,
-    carregado: !!imas && !!registros,
+    carregado: !!imas && !!registros && !!paradas,
     domingo: hoje.getDay() === 0,
+    parado: diaTodoParado(paradas ?? [], hojeKey),
   };
 }
 
@@ -101,7 +109,7 @@ function ListaPendencias({ porSlot }: { porSlot: Record<Slot, PendenciaItem[]> }
 
 /** Sino no cabeçalho com o total de pendências do turno atual. */
 export function AlertaPendenciasSino() {
-  const { hoje, pendencias, porSlot, turno, carregado, domingo } = usePendenciasTurno();
+  const { hoje, pendencias, porSlot, turno, carregado, domingo, parado } = usePendenciasTurno();
   const total = pendencias.length;
 
   return (
@@ -136,6 +144,8 @@ export function AlertaPendenciasSino() {
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : domingo ? (
           <p className="text-sm text-muted-foreground">Domingo — sem limpezas previstas.</p>
+        ) : parado ? (
+          <p className="text-sm text-muted-foreground">Dia parado — sem limpezas previstas.</p>
         ) : total === 0 ? (
           <p className="flex items-center gap-2 text-sm text-success">
             <CheckCircle2 className="h-4 w-4" /> Tudo em dia neste turno.

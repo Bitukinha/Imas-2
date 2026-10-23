@@ -15,6 +15,7 @@ import { Route as AuthenticatedUsuariosRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedSetoresRouteImport } from './routes/_authenticated/setores'
 import { Route as AuthenticatedPendenciasRouteImport } from './routes/_authenticated/pendencias'
 import { Route as AuthenticatedImasRouteImport } from './routes/_authenticated/imas'
+import { Route as AuthenticatedDiasParadosRouteImport } from './routes/_authenticated/dias-parados'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedRegistrosIndexRouteImport } from './routes/_authenticated/registros/index'
 import { Route as AuthenticatedRegistrosNovoRouteImport } from './routes/_authenticated/registros/novo'
@@ -48,6 +49,12 @@ const AuthenticatedImasRoute = AuthenticatedImasRouteImport.update({
   path: '/imas',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedDiasParadosRoute =
+  AuthenticatedDiasParadosRouteImport.update({
+    id: '/dias-parados',
+    path: '/dias-parados',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -69,6 +76,7 @@ const AuthenticatedRegistrosNovoRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/dias-parados': typeof AuthenticatedDiasParadosRoute
   '/imas': typeof AuthenticatedImasRoute
   '/pendencias': typeof AuthenticatedPendenciasRoute
   '/setores': typeof AuthenticatedSetoresRoute
@@ -79,6 +87,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/dias-parados': typeof AuthenticatedDiasParadosRoute
   '/imas': typeof AuthenticatedImasRoute
   '/pendencias': typeof AuthenticatedPendenciasRoute
   '/setores': typeof AuthenticatedSetoresRoute
@@ -91,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/dias-parados': typeof AuthenticatedDiasParadosRoute
   '/_authenticated/imas': typeof AuthenticatedImasRoute
   '/_authenticated/pendencias': typeof AuthenticatedPendenciasRoute
   '/_authenticated/setores': typeof AuthenticatedSetoresRoute
@@ -103,6 +113,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dashboard'
+    | '/dias-parados'
     | '/imas'
     | '/pendencias'
     | '/setores'
@@ -113,6 +124,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dashboard'
+    | '/dias-parados'
     | '/imas'
     | '/pendencias'
     | '/setores'
@@ -124,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/_authenticated/dashboard'
+    | '/_authenticated/dias-parados'
     | '/_authenticated/imas'
     | '/_authenticated/pendencias'
     | '/_authenticated/setores'
@@ -181,6 +194,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedImasRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/dias-parados': {
+      id: '/_authenticated/dias-parados'
+      path: '/dias-parados'
+      fullPath: '/dias-parados'
+      preLoaderRoute: typeof AuthenticatedDiasParadosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -207,6 +227,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedDiasParadosRoute: typeof AuthenticatedDiasParadosRoute
   AuthenticatedImasRoute: typeof AuthenticatedImasRoute
   AuthenticatedPendenciasRoute: typeof AuthenticatedPendenciasRoute
   AuthenticatedSetoresRoute: typeof AuthenticatedSetoresRoute
@@ -217,6 +238,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedDiasParadosRoute: AuthenticatedDiasParadosRoute,
   AuthenticatedImasRoute: AuthenticatedImasRoute,
   AuthenticatedPendenciasRoute: AuthenticatedPendenciasRoute,
   AuthenticatedSetoresRoute: AuthenticatedSetoresRoute,
