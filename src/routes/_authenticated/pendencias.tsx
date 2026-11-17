@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { listRegistrosPeriodo } from "@/server/registros";
 import { listImasAtivos } from "@/server/imas";
@@ -30,7 +30,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, CalendarClock, FileDown, Magnet, ListChecks } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CalendarOff,
+  FileDown,
+  Magnet,
+  ListChecks,
+} from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PeriodoFilter } from "@/components/PeriodoFilter";
 import { periodoInicial, resolverPeriodo, type Periodo } from "@/lib/periodo";
 import {
@@ -44,7 +61,9 @@ import {
 } from "@/lib/pendencias";
 import { diaKey } from "@/lib/turno";
 import { exportPendenciasPdf } from "@/lib/export-pdf";
-import { listParadas } from "@/server/paradas";
+import { createParadas, listParadas } from "@/server/paradas";
+
+type AlvoParada = { key: string; dia: Date; turno?: "A" | "B" | "C" };
 
 export const Route = createFileRoute("/_authenticated/pendencias")({
   component: PendenciasPage,
@@ -60,6 +79,9 @@ function PendenciasPage() {
   const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial("7d"));
   const [filtroSlot, setFiltroSlot] = useState<"all" | Slot>("all");
   const [exportando, setExportando] = useState(false);
+  /** Dia (e turno opcional) a marcar como parado — abre a confirmação. */
+  const [marcarParado, setMarcarParado] = useState<AlvoParada | null>(null);
+  const qc = useQueryClient();
   const agora = useAgora();
   const hojeKey = diaKey(agora);
 
@@ -87,6 +109,26 @@ function PendenciasPage() {
   const { data: paradas, isLoading: loadingParadas } = useQuery({
     queryKey: ["dias-parados"],
     queryFn: () => listParadas(),
+  });
+
+  const registrarParada = useMutation({
+    mutationFn: (alvo: AlvoParada) =>
+      createParadas({
+        data: {
+          de: alvo.key,
+          ate: alvo.key,
+          turno: alvo.turno,
+          motivo: "Marcado pela tela de pendências",
+        },
+      }),
+    onSuccess: (_, alvo) => {
+      toast.success(
+        alvo.turno ? `Turno ${alvo.turno} marcado como parado` : "Dia marcado como parado",
+      );
+      qc.invalidateQueries({ queryKey: ["dias-parados"] });
+      setMarcarParado(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const isLoading = loadingImas || loadingRegistros || loadingParadas;
@@ -398,6 +440,29 @@ function PendenciasPage() {
                         </div>
                       </AccordionTrigger>
                       <AccordionContent>
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setMarcarParado({ key: d.key, dia: d.dia })}
+                          >
+                            <CalendarOff className="mr-2 h-4 w-4" /> Marcar dia como parado
+                          </Button>
+                          {(["A", "B", "C"] as const)
+                            .filter((t) => d.porSlot[t].length > 0)
+                            .map((t) => (
+                              <Button
+                                key={t}
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setMarcarParado({ key: d.key, dia: d.dia, turno: t })
+                                }
+                              >
+                                Só turno {t} parado
+                              </Button>
+                            ))}
+                        </div>
                         <div
                           className={`grid gap-3 ${slotsVisiveis.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}
                         >
@@ -431,6 +496,40 @@ function PendenciasPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={!!marcarParado} onOpenChange={(o) => !o && setMarcarParado(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {marcarParado?.turno
+                ? `Marcar turno ${marcarParado.turno} como parado?`
+                : "Marcar dia como parado?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {marcarParado && (
+                <>
+                  <span className="capitalize">{formatDia(marcarParado.dia)}</span>
+                  {marcarParado.turno ? `, turno ${marcarParado.turno}` : " (dia todo)"}, para todos
+                  os setores. As limpezas desse período deixam de contar como pendência e na
+                  aderência. Dá para desfazer na tela "Dias parados".
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={registrarParada.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={registrarParada.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (marcarParado) registrarParada.mutate(marcarParado);
+              }}
+            >
+              {registrarParada.isPending ? "Salvando..." : "Marcar como parado"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
