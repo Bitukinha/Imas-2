@@ -72,6 +72,8 @@ export const diasParados = pgTable("dias_parados", {
   id: uuid("id").primaryKey().defaultRandom(),
   data: date("data", { mode: "string" }).notNull(),
   setorId: uuid("setor_id").references(() => setores.id, { onDelete: "cascade" }),
+  // Ima específico parado (máquina em manutenção etc.). Nulo = todos os imas do setor.
+  imaId: uuid("ima_id").references(() => imas.id, { onDelete: "cascade" }),
   turno: turnoEnum("turno"),
   motivo: text("motivo"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

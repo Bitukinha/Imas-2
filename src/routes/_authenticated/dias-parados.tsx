@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { createParadas, deleteParada, listParadas } from "@/server/paradas";
 import { listSetores } from "@/server/setores";
+import { listImasAtivos } from "@/server/imas";
 import { diaKey, turnoLabel, type Turno } from "@/lib/turno";
 
 export const Route = createFileRoute("/_authenticated/dias-parados")({
@@ -63,6 +64,7 @@ function DiasParadosPage() {
   const [de, setDe] = useState(hoje);
   const [ate, setAte] = useState(hoje);
   const [setorId, setSetorId] = useState(TODOS);
+  const [imaId, setImaId] = useState(TODOS);
   const [turno, setTurno] = useState(TODOS);
   const [motivo, setMotivo] = useState("");
 
@@ -76,6 +78,12 @@ function DiasParadosPage() {
     queryFn: () => listSetores(),
   });
 
+  const { data: imas } = useQuery({
+    queryKey: ["imas-ativos"],
+    queryFn: () => listImasAtivos(),
+  });
+  const imasDoSetor = imas?.filter((i) => setorId === TODOS || i.setorId === setorId) ?? [];
+
   const criar = useMutation({
     mutationFn: () =>
       createParadas({
@@ -83,6 +91,7 @@ function DiasParadosPage() {
           de,
           ate: ate || de,
           setorId: setorId === TODOS ? undefined : setorId,
+          imaId: imaId === TODOS ? undefined : imaId,
           turno: turno === TODOS ? undefined : (turno as Turno),
           motivo: motivo.trim() || undefined,
         },
@@ -92,6 +101,7 @@ function DiasParadosPage() {
       invalidar(qc);
       setOpen(false);
       setMotivo("");
+      setImaId(TODOS);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -124,8 +134,8 @@ function DiasParadosPage() {
             <DialogHeader>
               <DialogTitle>Registrar parada</DialogTitle>
               <DialogDescription>
-                Escolha um dia ou um intervalo. Deixe setor e turno em "Todos" para parar a fábrica
-                inteira.
+                Escolha um dia ou um intervalo. Para parar só uma máquina, escolha o ima. Deixe
+                setor, ima e turno em "Todos" para parar a fábrica inteira.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -149,7 +159,13 @@ function DiasParadosPage() {
               </div>
               <div className="space-y-2">
                 <Label>Setor</Label>
-                <Select value={setorId} onValueChange={setSetorId}>
+                <Select
+                  value={setorId}
+                  onValueChange={(v) => {
+                    setSetorId(v);
+                    setImaId(TODOS);
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -158,6 +174,23 @@ function DiasParadosPage() {
                     {setores?.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         {s.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Ima</Label>
+                <Select value={imaId} onValueChange={setImaId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>Todos os imas</SelectItem>
+                    {imasDoSetor.map((i) => (
+                      <SelectItem key={i.id} value={i.id}>
+                        {i.codigo}
+                        {setorId === TODOS && i.setorNome ? ` (${i.setorNome})` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -212,6 +245,7 @@ function DiasParadosPage() {
                 <TableRow>
                   <TableHead>Data</TableHead>
                   <TableHead>Setor</TableHead>
+                  <TableHead>Ima</TableHead>
                   <TableHead>Turno</TableHead>
                   <TableHead className="hidden sm:table-cell">Motivo</TableHead>
                   <TableHead className="w-16" />
@@ -222,6 +256,7 @@ function DiasParadosPage() {
                   <TableRow key={p.id}>
                     <TableCell className="font-medium capitalize">{formatDia(p.data)}</TableCell>
                     <TableCell>{p.setorNome ?? "Todos"}</TableCell>
+                    <TableCell>{p.imaCodigo ?? "Todos"}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{p.turno ? `Turno ${p.turno}` : "Dia todo"}</Badge>
                     </TableCell>

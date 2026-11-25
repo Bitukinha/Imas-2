@@ -36,8 +36,13 @@ export type ImaRef = {
 
 type RegistroRef = { imaId: string; turno: string; dataHora: string | Date };
 
-/** Dia parado (AAAA-MM-DD). setorId/turno nulos = vale para todos os setores/turnos. */
-export type ParadaRef = { data: string; setorId: string | null; turno: string | null };
+/** Dia parado (AAAA-MM-DD). setorId/imaId/turno nulos = vale para todos os setores/imas/turnos. */
+export type ParadaRef = {
+  data: string;
+  setorId: string | null;
+  imaId?: string | null;
+  turno: string | null;
+};
 
 /**
  * Indica se o slot do ímã nesse dia está dentro de uma parada (sem limpeza prevista).
@@ -50,17 +55,20 @@ function criarVerificadorParadas(paradas: ParadaRef[]) {
     lista.push(p);
     porDia.set(p.data, lista);
   }
-  return (dKey: string, setorId: string, slot: Slot) =>
+  return (dKey: string, ima: Pick<ImaRef, "id" | "setorId">, slot: Slot) =>
     (porDia.get(dKey) ?? []).some(
       (p) =>
-        (p.setorId === null || p.setorId === setorId) &&
+        (p.setorId === null || p.setorId === ima.setorId) &&
+        (!p.imaId || p.imaId === ima.id) &&
         (p.turno === null || (slot !== "D" && p.turno === slot)),
     );
 }
 
-/** Dia inteiro parado para todos os setores — não conta como dia útil. */
+/** Dia inteiro parado para todos os setores e imas — não conta como dia útil. */
 export function diaTodoParado(paradas: ParadaRef[], dKey: string) {
-  return paradas.some((p) => p.data === dKey && p.setorId === null && p.turno === null);
+  return paradas.some(
+    (p) => p.data === dKey && p.setorId === null && !p.imaId && p.turno === null,
+  );
 }
 
 export type PendenciaItem = {
@@ -117,7 +125,7 @@ export function calcularPendencias(
       for (const slot of slots) {
         const [ini, fimJanela] = JANELAS[slot];
         if (agora < emMinutos(dia, ini)) continue; // ainda não começou
-        if (parado(dKey, ima.setorId, slot)) continue;
+        if (parado(dKey, ima, slot)) continue;
         esperadosPorSlot[slot]++;
         const feito =
           slot === "D"

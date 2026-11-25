@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db/client";
-import { diasParados, setores } from "@/db/schema";
+import { diasParados, imas, setores } from "@/db/schema";
 
 const diaSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -12,12 +12,15 @@ export const listParadas = createServerFn().handler(async () => {
       id: diasParados.id,
       data: diasParados.data,
       setorId: diasParados.setorId,
+      imaId: diasParados.imaId,
       turno: diasParados.turno,
       motivo: diasParados.motivo,
       setorNome: setores.nome,
+      imaCodigo: imas.codigo,
     })
     .from(diasParados)
     .leftJoin(setores, eq(diasParados.setorId, setores.id))
+    .leftJoin(imas, eq(diasParados.imaId, imas.id))
     .orderBy(desc(diasParados.data));
 });
 
@@ -28,6 +31,7 @@ export const createParadas = createServerFn({ method: "POST" })
       de: diaSchema,
       ate: diaSchema,
       setorId: z.string().optional(),
+      imaId: z.string().optional(),
       turno: z.enum(["A", "B", "C"]).optional(),
       motivo: z.string().optional(),
     }),
@@ -42,12 +46,25 @@ export const createParadas = createServerFn({ method: "POST" })
       dias.push(d.toISOString().slice(0, 10));
       d.setUTCDate(d.getUTCDate() + 1);
     }
+
+    // Parada de um ima: grava também o setor dele, para a listagem mostrar os dois.
+    let setorId = data.setorId || null;
+    if (data.imaId) {
+      const [ima] = await getDb()
+        .select({ setorId: imas.setorId })
+        .from(imas)
+        .where(eq(imas.id, data.imaId));
+      if (!ima) throw new Error("Ima não encontrado");
+      setorId = ima.setorId;
+    }
+
     await getDb()
       .insert(diasParados)
       .values(
         dias.map((dia) => ({
           data: dia,
-          setorId: data.setorId || null,
+          setorId,
+          imaId: data.imaId || null,
           turno: data.turno ?? null,
           motivo: data.motivo || null,
         })),
